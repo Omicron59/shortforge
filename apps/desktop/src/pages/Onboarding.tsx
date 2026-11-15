@@ -5,6 +5,7 @@ import { api } from "../api/client";
 import { useAction } from "../api/hooks";
 import { Alert, Button, Card, PageHeader } from "../components/ui";
 import { openPath } from "../lib/open";
+import { ComfyCard } from "../components/ComfyCard";
 
 export default function Onboarding() {
   const state = useQuery({ queryKey: ["onboarding"], queryFn: api.onboarding, refetchInterval: 5000 });
@@ -32,6 +33,7 @@ export default function Onboarding() {
           </ul>
           <p className="mt-4 text-xs text-zinc-500">Nouvelle vérification toutes les 5 secondes. Espace libre : {s.free_space_gb} Go.</p>
         </Card>
+        <ComfyCard />
         <Card title="Tes réglages et tes clés">
           <p className="text-sm text-zinc-300">
             Les clés API (Gemini, ElevenLabs, YouTube, Postiz…) et les options se règlent dans un fichier texte sur ton ordinateur, jamais dans l'application.

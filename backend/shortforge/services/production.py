@@ -91,6 +91,7 @@ def generate_images(session: Session, runtime: Runtime, project: Project) -> dic
         filled = apply_inputs(workflow, spec, {
             "prompt": scene.visual_prompt, "negative_prompt": scene.negative_prompt, "seed": scene.seed,
             "width": runtime.settings.image_width, "height": runtime.settings.image_height,
+            "model": get_value(session, "comfyui_checkpoint") or None,  # modele choisi dans Parametres
         })
         scene.image_status = "running"
         session.flush()

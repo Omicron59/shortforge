@@ -15,7 +15,7 @@ import httpx
 from sqlalchemy.orm import Session
 
 from shortforge.config import Settings
-from shortforge.integrations.comfyui import ComfyUIClient, WorkflowLibrary
+from shortforge.integrations.comfyui import DEFAULT_COMFYUI_URLS, ComfyUIClient, WorkflowLibrary
 from shortforge.integrations.ollama import LLMClient, OllamaClient
 from shortforge.integrations.trends import GoogleTrendsSource, ManualTrendSource, TrendSource, YouTubeTrendSource
 from shortforge.providers.registry import ProviderRegistry, build_registry
@@ -89,7 +89,8 @@ def default_trend_sources(settings: Settings) -> Callable[[Session], list[TrendS
 
 
 def build_runtime(settings: Settings) -> Runtime:
-    comfy = ComfyUIClient(settings.comfyui_url, timeout_s=settings.comfyui_timeout_s)
+    comfy = ComfyUIClient(settings.comfyui_url, timeout_s=settings.comfyui_timeout_s,
+                          candidates=list(DEFAULT_COMFYUI_URLS))
     library = WorkflowLibrary(settings.workflow_dirs[:1] + settings.workflow_dirs[2:],
                               settings.shortforge_data_dir / "workflows")
     llm = OllamaClient(settings.ollama_url, settings.ollama_model, timeout_s=settings.ollama_timeout_s,

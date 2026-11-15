@@ -329,3 +329,8 @@ export interface Onboarding {
   steps: { id: string; label: string; ok: boolean; help: string }[];
   done: boolean; data_dir: string; env_file: string; platform: string; free_space_gb: number;
 }
+
+export interface ComfyCheck {
+  running: boolean; url: string; switched: boolean; checkpoints: string[]; expected_checkpoint: string;
+  chosen_checkpoint: string; ready: boolean; message: string;
+}

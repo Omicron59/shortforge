@@ -27,7 +27,7 @@ class Settings(BaseSettings):
     shortforge_port: int = 8787
     shortforge_language: str = "fr"
 
-    comfyui_url: str = "http://127.0.0.1:8188"
+    comfyui_url: str = "http://127.0.0.1:8000"
     comfyui_timeout_s: float = 1800
     comfyui_workflows_dir: Path | None = None  # workflows personnels (en plus de assets/workflows)
     comfyui_image_workflow: str = "image_default"

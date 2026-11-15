@@ -36,6 +36,7 @@ from shortforge.routers import (
 )
 from shortforge.routers import settings as settings_router
 from shortforge.runtime import Runtime, build_runtime
+from shortforge.services.app_settings import get_value
 from shortforge.services.production import ProductionError
 from shortforge.services.provider_catalog import seed_providers
 from shortforge.services.publish_guard import PublishBlockedError
@@ -60,6 +61,9 @@ def create_app(settings: Settings | None = None, registry: HandlerRegistry | Non
         db.create_all()
         with db.session() as session:
             seed_providers(session)
+            saved_url = get_value(session, "comfyui_url")
+            if saved_url:  # adresse choisie dans Parametres (prioritaire sur le fichier de reglages)
+                runtime.comfy.set_base_url(saved_url)
             recovered = PipelineService(session, settings, registry).recover_interrupted()
         if recovered:
             logger.warning("%s étape(s) interrompue(s) remise(s) en attente.", recovered)

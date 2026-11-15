@@ -1,5 +1,13 @@
 # Journal des changements
 
+## 0.5.1 — 15/11/2026
+
+### Corrigé
+- ComfyUI Desktop (port 8000) n'était pas trouvé : ShortForge essaie maintenant l'adresse réglée, puis les ports 8000 et 8188, et garde celle qui répond.
+
+### Ajouté
+- Paramètres et assistant : carte ComfyUI avec bouton « Tester », adresse modifiable sans ouvrir le fichier de réglages, choix du modèle d'image parmi ceux installés dans ComfyUI.
+
 ## 0.5.0 — 15/11/2026
 
 ### Ajouté

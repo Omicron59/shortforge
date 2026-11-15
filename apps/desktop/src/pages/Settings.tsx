@@ -8,12 +8,14 @@ import type { Budget, Importance, Provider } from "../api/types";
 import { Alert, Badge, Button, Card, Field, Loading, PageHeader, inputClass } from "../components/ui";
 import { IMPORTANCE_LABELS } from "../lib/format";
 import { openExternal } from "../lib/open";
+import { ComfyCard } from "../components/ComfyCard";
 
 export default function Settings() {
   return (
     <>
       <PageHeader title="Paramètres" subtitle="Budget, moteurs vidéo et sources d'inspiration." />
       <div className="space-y-6">
+        <ComfyCard />
         <BudgetSettings />
         <ProviderSettings />
         <EngineRules />

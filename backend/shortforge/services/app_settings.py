@@ -16,7 +16,8 @@ from shortforge.models import Setting
 # Cles autorisees : rien d'autre ne peut etre ecrit (et surtout pas un secret).
 BUDGET_KEYS = ("budget_max_per_scene", "budget_max_per_short", "budget_max_per_day", "budget_max_per_month")
 ALLOWED_KEYS = frozenset({*BUDGET_KEYS, "engine_rules", "manual_trends", "comfyui_image_workflow", "voice", "brand",
-                          "style_profile", "insights", "schedule_slots", "onboarding_done"})
+                          "style_profile", "insights", "schedule_slots", "onboarding_done",
+                          "comfyui_url", "comfyui_checkpoint"})
 
 
 class SettingsError(ValueError):

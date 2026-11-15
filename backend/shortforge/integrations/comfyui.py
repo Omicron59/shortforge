@@ -181,16 +181,54 @@ class WorkflowLibrary:
 # ── Client HTTP / WebSocket ──
 
 
+# Ports habituels : ComfyUI Desktop (8000) et ComfyUI classique ou portable (8188).
+DEFAULT_COMFYUI_URLS = ("http://127.0.0.1:8000", "http://127.0.0.1:8188")
+
+
 class ComfyUIClient:
     def __init__(self, base_url: str, *, timeout_s: float = 1800, poll_interval_s: float = 1.0,
                  use_websocket: bool = True, transport: httpx.BaseTransport | None = None,
-                 sleep: Callable[[float], None] = time.sleep) -> None:
-        self.base_url = base_url.rstrip("/")
+                 sleep: Callable[[float], None] = time.sleep, candidates: list[str] | None = None) -> None:
         self.timeout_s = timeout_s
         self.poll_interval_s = poll_interval_s
         self.use_websocket = use_websocket
         self._sleep = sleep
-        self._http = httpx.Client(base_url=self.base_url, timeout=60, transport=transport)
+        self._transport = transport
+        # Adresses essayees si l'adresse actuelle ne repond pas (detection automatique du port).
+        self.candidates = [u.rstrip("/") for u in (candidates or [])]
+        self.set_base_url(base_url)
+
+    def set_base_url(self, base_url: str) -> None:
+        self.base_url = base_url.rstrip("/")
+        self._http = httpx.Client(base_url=self.base_url, timeout=60, transport=self._transport)
+
+    def _responds(self, url: str) -> bool:
+        try:
+            with httpx.Client(transport=self._transport, timeout=2) as probe:
+                res = probe.get(f"{url}/system_stats")
+        except httpx.HTTPError:
+            return False
+        return res.status_code == 200
+
+    def detect(self) -> str | None:
+        """Adresse qui repond (l'actuelle d'abord, puis les ports habituels) ; bascule dessus. None sinon."""
+        for url in dict.fromkeys([self.base_url, *self.candidates]):
+            if self._responds(url):
+                if url != self.base_url:
+                    self.set_base_url(url)
+                return url
+        return None
+
+    def checkpoints(self) -> list[str]:
+        """Modeles d'image (checkpoints) installes dans ComfyUI."""
+        try:
+            res = self._http.get("/object_info/CheckpointLoaderSimple", timeout=10)
+            res.raise_for_status()
+            info = res.json().get("CheckpointLoaderSimple", {})
+            names = info.get("input", {}).get("required", {}).get("ckpt_name", [[]])[0]
+        except (httpx.HTTPError, ValueError, AttributeError, IndexError, TypeError):
+            return []
+        return [str(n) for n in names] if isinstance(names, list) else []
 
     def system_stats(self) -> dict[str, Any]:
         try:
@@ -205,7 +243,7 @@ class ComfyUIClient:
         try:
             self.system_stats()
         except ComfyUIError:
-            return False
+            return self.detect() is not None  # ComfyUI a peut-etre un autre port : on le cherche
         return True
 
     def upload_image(self, path: Path) -> str:

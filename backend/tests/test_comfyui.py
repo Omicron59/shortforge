@@ -105,3 +105,20 @@ def test_progress_callback_on_polling(tmp_path: Path) -> None:
     progress: list[float] = []
     FakeComfyServer().client().wait("p1", "c", on_progress=lambda f, _m: progress.append(f))
     assert progress == [1.0]
+
+
+def test_client_finds_comfy_desktop_port() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.port == 8000 and request.url.path == "/system_stats":
+            return httpx.Response(200, json={"devices": []})
+        if request.url.port == 8000 and request.url.path == "/object_info/CheckpointLoaderSimple":
+            return httpx.Response(200, json={"CheckpointLoaderSimple": {"input": {"required": {
+                "ckpt_name": [["juggernautXL.safetensors", "sd_xl_base_1.0.safetensors"]]}}}})
+        raise httpx.ConnectError("refusé", request=request)
+
+    client = ComfyUIClient("http://127.0.0.1:8188", transport=httpx.MockTransport(handler),
+                           candidates=["http://127.0.0.1:8000", "http://127.0.0.1:8188"])
+    assert client.is_running() is True and client.base_url == "http://127.0.0.1:8000"
+    assert client.checkpoints() == ["juggernautXL.safetensors", "sd_xl_base_1.0.safetensors"]
+    dead = ComfyUIClient("http://127.0.0.1:8188", transport=httpx.MockTransport(handler), candidates=[])
+    assert dead.is_running() is False and dead.detect() is None

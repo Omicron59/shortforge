@@ -66,3 +66,12 @@ def test_release_endpoints_without_render(client: TestClient) -> None:
     assert connect.status_code == 502 and "YOUTUBE_CLIENT_SECRETS_FILE" in connect.json()["detail"]
     page = client.get("/api/youtube/oauth/callback?error=access_denied")
     assert "Connexion annulée" in page.text
+
+
+def test_comfyui_check_and_settings(client: TestClient) -> None:
+    body = client.get("/api/comfyui/check").json()
+    assert set(body) >= {"running", "url", "checkpoints", "message", "ready"}
+    assert body["running"] is False and "Comfy Desktop" in body["message"]
+    saved = client.put("/api/comfyui/settings", json={"url": "http://127.0.0.1:8000", "checkpoint": "mon.safetensors"})
+    assert saved.json()["url"] == "http://127.0.0.1:8000" and saved.json()["chosen_checkpoint"] == "mon.safetensors"
+    assert client.put("/api/comfyui/settings", json={"url": "pas une adresse"}).status_code == 422

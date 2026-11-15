@@ -42,6 +42,7 @@ import type {
   SourceVideo,
   SocialPostT,
   Onboarding,
+  ComfyCheck,
 } from "./types";
 
 export const API_URL: string = import.meta.env.VITE_API_URL ?? "http://127.0.0.1:8787";
@@ -233,6 +234,8 @@ export const api = {
   postPublished: (postId: string, url: string) => send<SocialPostT>("POST", `/api/posts/${postId}/published`, { url }),
   finishManual: (id: string) => send<{ status: string }>("POST", `/api/projects/${id}/finish-manual`),
 
+  comfyCheck: () => get<ComfyCheck>("/api/comfyui/check"),
+  setComfy: (body: { url?: string; checkpoint?: string }) => send<ComfyCheck>("PUT", "/api/comfyui/settings", body),
   onboarding: () => get<Onboarding>("/api/onboarding"),
   onboardingDone: () => send<{ done: boolean }>("POST", "/api/onboarding/done"),
 };
