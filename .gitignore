@@ -1,0 +1,34 @@
+# Secrets
+.env
+*.env.local
+client_secret*.json
+token*.json
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+.coverage
+htmlcov/
+
+# Donnees locales
+data/
+*.sqlite3
+*.db
+outputs/
+
+# Node / Tauri
+node_modules/
+dist/
+apps/desktop/src-tauri/target/
+apps/desktop/src-tauri/binaries/
+
+# Systeme
+.DS_Store
+Thumbs.db
+apps/desktop/src-tauri/gen/
+*.tsbuildinfo

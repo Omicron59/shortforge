@@ -1,0 +1,12 @@
+{
+  "name": "Image verticale SDXL (exemple)",
+  "kind": "image",
+  "inputs": {
+    "prompt": {"node": "6", "field": "text"},
+    "negative_prompt": {"node": "7", "field": "text"},
+    "width": {"node": "5", "field": "width"},
+    "height": {"node": "5", "field": "height"},
+    "seed": {"node": "3", "field": "seed"},
+    "model": {"node": "4", "field": "ckpt_name"}
+  }
+}
