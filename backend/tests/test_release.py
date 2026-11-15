@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import shutil
-import subprocess
 from pathlib import Path
 from typing import Any
 
@@ -28,19 +27,6 @@ needs_ffmpeg = pytest.mark.skipif(not FFMPEG, reason="FFmpeg absent")
 
 
 # ── Medias reels pour FFmpeg ──
-
-
-@pytest.fixture(scope="module")
-def media(tmp_path_factory: pytest.TempPathFactory) -> dict[str, bytes]:
-    if not FFMPEG:
-        pytest.skip("FFmpeg absent")
-    folder = tmp_path_factory.mktemp("media")
-    png, mp4 = folder / "img.png", folder / "clip.mp4"
-    subprocess.run(["ffmpeg", "-v", "error", "-f", "lavfi", "-i", "testsrc=size=768x1344", "-frames:v", "1",
-                    str(png)], check=True)
-    subprocess.run(["ffmpeg", "-v", "error", "-f", "lavfi", "-i", "testsrc=size=720x1280:rate=24", "-t", "2",
-                    "-pix_fmt", "yuv420p", str(mp4)], check=True)  # plus court que la scene : prolonge
-    return {"png": png.read_bytes(), "mp4": mp4.read_bytes()}
 
 
 class MediaComfy(FakeComfyServer):
@@ -152,17 +138,19 @@ def connect_channel(session: Session, settings: Settings) -> None:
 
 
 def test_subtitles_follow_scene_timing() -> None:
+    from shortforge.services import subtitles as subs
+
     scenes = [Scene(text="un deux trois quatre cinq", duration_s=4), Scene(text="", duration_s=2),
               Scene(text="six sept", duration_s=3)]
-    segments = render.build_segments(scenes)
-    assert [s["text"] for s in segments] == ["un deux trois quatre", "cinq", "six sept"]
-    assert segments[1] == {"start": 2.0, "end": 4.0, "text": "cinq"}
-    assert segments[2]["start"] == 6.0
-    srt = render.to_srt(segments)
-    assert srt.startswith("1\n00:00:00,000 --> 00:00:02,000\nun deux trois quatre\n")
-    ass = render.to_ass(segments, {"position": "top", "color": "#FF0000"})
+    words = subs.words_from_scenes(scenes)
+    assert words[4] == {"word": "cinq", "start": 3.2, "end": 4.0} and words[5]["start"] == 6.0
+    segments = subs.group_lines(words, 3)
+    assert [s["text"] for s in segments] == ["un deux trois", "quatre cinq", "six sept"]
+    srt = subs.to_srt(segments)
+    assert srt.startswith("1\n00:00:00,000 --> 00:00:02,400\nun deux trois\n")
+    ass = subs.to_ass(segments, subs.preset_style("classique", {"position": "top", "color": "#FF0000"}))
     assert "PlayResY: 1920" in ass and ",&H000000FF," in ass and ",8,80,80,260," in ass
-    assert "Dialogue: 0,0:00:06.00,0:00:09.00,Default,,0,0,0,,SIX SEPT" in ass
+    assert "Dialogue: 0,0:00:06.00,0:00:09.00,Default,,0,0,0,,six sept" in ass
 
 
 def test_ffmpeg_command_targets_vertical_h264(tmp_path: Path) -> None:
@@ -198,7 +186,9 @@ def test_export_preview_validation_and_draft(session: Session, tmp_path: Path, m
     out = service.get_step(project_id, StepName.RENDER_VIDEO).output or {}
     assert (out["width"], out["height"], out["video_codec"], out["audio_codec"]) == (1080, 1920, "h264", "aac")
     assert out["duration_s"] == pytest.approx(6, abs=0.1)
-    assert any("piste son muette" in w for w in out["warnings"])
+    assert out["quality"]["score"] >= 7, out["quality"]
+    voice_step = service.get_step(project_id, StepName.GENERATE_VOICE).output or {}
+    assert voice_step["engine"] == "Voix de test" and voice_step["scenes"] == 2
 
     assert service.advance(project_id).status == "needs_validation"  # apercu
     service.approve(project_id, StepName.REVIEW_PREVIEW, actor="utilisateur")
@@ -258,7 +248,7 @@ def test_publication_needs_every_final_check(session: Session, tmp_path: Path, m
         service.approve(project_id, StepName.PUBLISH, actor="utilisateur")
 
     checks = youtube.checks_as_dict(youtube.final_checks(session, settings, project))
-    assert checks["ready"] is True, checks
+    assert checks["ready"] is True, [c for c in checks["checks"] if not c["ok"]]
     step = service.approve(project_id, StepName.PUBLISH, actor="utilisateur", confirmed=True)
     assert step.status == "done"
     job = youtube.current_draft(session, project_id)

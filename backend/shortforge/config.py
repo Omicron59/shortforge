@@ -6,10 +6,13 @@ pour ne jamais apparaitre en clair dans les journaux ni dans les reponses de l'A
 
 from __future__ import annotations
 
+import os
+import sys
 from functools import lru_cache
 from pathlib import Path
+from typing import Any
 
-from pydantic import SecretStr
+from pydantic import SecretStr, ValidationInfo, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -55,14 +58,39 @@ class Settings(BaseSettings):
     youtube_api_key: SecretStr | None = None  # tendances YouTube (lecture seule)
     trends_region: str = "FR"
 
+    # Voix off : "auto" (Piper si configure, sinon la voix du systeme), "piper", "system" ou "elevenlabs".
+    tts_engine: str = "auto"
+    piper_path: str = "piper"
+    piper_voice: str = ""  # fichier .onnx d'une voix Piper
+    system_voice: str = ""  # nom d'une voix installee (Windows ou macOS) ; vide = voix par defaut
+    elevenlabs_api_key: SecretStr | None = None
+    elevenlabs_voice_id: str = ""
+    elevenlabs_model: str = "eleven_multilingual_v2"
+    elevenlabs_cost_per_1000_chars: float | None = None  # None = tarif inconnu : generation bloquee
+    whisper_model: str = "small"  # faster-whisper (transcription locale, optionnelle)
+    quality_min_score: float = 7.0  # note minimale du controle qualite pour publier
+
+    # Publication sur TikTok et Instagram par Postiz (optionnel, desactive par defaut).
+    social_publish_enabled: bool = False
+    postiz_url: str = "https://api.postiz.com/public/v1"
+    postiz_api_key: SecretStr | None = None
+
     youtube_publish_enabled: bool = False
     youtube_client_secrets_file: str = ""
     ai_disclosure_text: str = "Vidéo générée avec l'aide de l'IA."
 
+    @field_validator("*", mode="before")
+    @classmethod
+    def _empty_means_unset(cls, value: Any, info: ValidationInfo) -> Any:
+        """Une ligne `CLE=` vide dans le fichier de reglages = valeur non renseignee (None si permis)."""
+        if value == "" and info.field_name in _OPTIONAL_FIELDS:
+            return None
+        return value
+
     @property
     def workflow_dirs(self) -> list[Path]:
         """Dossiers de workflows ComfyUI : ceux du projet, puis ceux de l'utilisateur."""
-        dirs = [Path(__file__).resolve().parents[2] / "assets" / "workflows", self.shortforge_data_dir / "workflows"]
+        dirs = [bundled_dir() / "assets" / "workflows", self.shortforge_data_dir / "workflows"]
         if self.comfyui_workflows_dir:
             dirs.append(self.comfyui_workflows_dir)
         return dirs
@@ -75,7 +103,22 @@ class Settings(BaseSettings):
         return f"sqlite:///{(self.shortforge_data_dir / 'shortforge.sqlite3').as_posix()}"
 
 
+def env_file_path() -> Path:
+    """Fichier de reglages : SHORTFORGE_ENV_FILE (application installee) ou `.env` du dossier courant."""
+    return Path(os.environ.get("SHORTFORGE_ENV_FILE", ".env"))
+
+
+def bundled_dir() -> Path:
+    """Dossier des fichiers fournis avec l'application (racine du depot, ou paquet PyInstaller)."""
+    frozen = getattr(sys, "_MEIPASS", None)
+    return Path(frozen) if frozen else Path(__file__).resolve().parents[2]
+
+
 @lru_cache
 def get_settings() -> Settings:
     """Reglages charges une seule fois par processus."""
-    return Settings()
+    return Settings(_env_file=env_file_path())
+
+
+_OPTIONAL_FIELDS = frozenset(name for name, field in Settings.model_fields.items()
+                             if field.default is None)

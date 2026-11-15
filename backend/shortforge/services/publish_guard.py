@@ -1,7 +1,8 @@
 """Garde-fou de publication YouTube.
 
 Rien n'est publie sans que TOUTES ces conditions soient reunies :
-1. `YOUTUBE_PUBLISH_ENABLED=true` dans le `.env` local (desactive par defaut) ;
+1. `YOUTUBE_PUBLISH_ENABLED=true` ou `SOCIAL_PUBLISH_ENABLED=true` dans le `.env` local
+   (les deux sont desactives par defaut) ;
 2. le rendu final a ete valide par une personne (etape `approve_final_render`) ;
 3. la publication elle-meme est confirmee explicitement par une personne.
 """
@@ -43,8 +44,9 @@ def check_publish(
 ) -> PublishCheck:
     """Verifie les conditions de publication sans rien declencher."""
     reasons: list[str] = []
-    if not settings.youtube_publish_enabled:
-        reasons.append("la publication YouTube est désactivée (YOUTUBE_PUBLISH_ENABLED=false)")
+    if not (settings.youtube_publish_enabled or settings.social_publish_enabled):
+        reasons.append("la publication automatique est désactivée "
+                       "(YOUTUBE_PUBLISH_ENABLED=false et SOCIAL_PUBLISH_ENABLED=false)")
     if not is_human_actor(final_render_validated_by):
         reasons.append("le rendu final n'a pas été validé par une personne")
     if not confirmed:

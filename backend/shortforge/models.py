@@ -43,6 +43,10 @@ class Project(TimestampMixin, Base):
     default_provider: Mapped[str] = mapped_column(String(40), default="comfyui_local")
     # "short" : un seul moteur pour tout le Short ; "scene" : moteur choisi scene par scene.
     engine_scope: Mapped[str] = mapped_column(String(10), default="scene")
+    # "generated" : Short cree de zero ; "clip" : extrait d'une video longue importee.
+    source: Mapped[str] = mapped_column(String(10), default="generated")
+    planned_for: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)  # planning de la semaine
+    clip: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)  # {source_id, start, end} pour un extrait
 
     steps: Mapped[list[PipelineStep]] = relationship(
         back_populates="project", cascade="all, delete-orphan", order_by="PipelineStep.position"
@@ -288,4 +292,93 @@ class Analytics(Base):
     likes: Mapped[int] = mapped_column(Integer, default=0)
     comments: Mapped[int] = mapped_column(Integer, default=0)
     average_view_duration_s: Mapped[float] = mapped_column(Float, default=0)
+    platform: Mapped[str] = mapped_column(String(20), default="youtube")
+    project_id: Mapped[str | None] = mapped_column(ForeignKey("projects.id", ondelete="SET NULL"), nullable=True)
+    source: Mapped[str] = mapped_column(String(10), default="api")  # api|manuel
     collected_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class Competitor(Base):
+    """Compte suivi pour reperer les formats qui marchent (5 au plus)."""
+
+    __tablename__ = "competitors"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    platform: Mapped[str] = mapped_column(String(20), default="youtube")  # youtube|tiktok
+    handle: Mapped[str] = mapped_column(String(200))  # @nom ou identifiant de chaine
+    channel_id: Mapped[str] = mapped_column(String(100), default="")
+    title: Mapped[str] = mapped_column(String(200), default="")
+    median_views: Mapped[float] = mapped_column(Float, default=0)
+    last_checked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class CompetitorVideo(Base):
+    __tablename__ = "competitor_videos"
+    __table_args__ = (UniqueConstraint("competitor_id", "external_id"),)
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    competitor_id: Mapped[str] = mapped_column(ForeignKey("competitors.id", ondelete="CASCADE"), index=True)
+    external_id: Mapped[str] = mapped_column(String(100))
+    title: Mapped[str] = mapped_column(String(300), default="")
+    description: Mapped[str] = mapped_column(Text, default="")
+    url: Mapped[str] = mapped_column(Text, default="")
+    duration_s: Mapped[float] = mapped_column(Float, default=0)
+    views: Mapped[int] = mapped_column(Integer, default=0)
+    published_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    ratio: Mapped[float] = mapped_column(Float, default=0)  # vues / mediane du compte
+    outlier: Mapped[bool] = mapped_column(Boolean, default=False)  # au moins 2x la mediane
+    recipe: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)  # format abstrait (jamais le contenu)
+    source: Mapped[str] = mapped_column(String(10), default="api")  # api|manuel
+
+
+class MusicTrack(Base):
+    """Musique de la bibliotheque personnelle (droits confirmes par l'utilisateur)."""
+
+    __tablename__ = "music_tracks"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    title: Mapped[str] = mapped_column(String(200))
+    path: Mapped[str] = mapped_column(Text)
+    mood: Mapped[str] = mapped_column(String(50), default="")
+    license: Mapped[str] = mapped_column(String(200), default="")
+    rights_confirmed: Mapped[bool] = mapped_column(Boolean, default=False)
+    volume: Mapped[float] = mapped_column(Float, default=0.15)
+    is_default: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class SourceVideo(Base):
+    """Video longue importee pour en tirer des Shorts (filmee par l'utilisateur)."""
+
+    __tablename__ = "source_videos"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    title: Mapped[str] = mapped_column(String(200))
+    path: Mapped[str] = mapped_column(Text)
+    duration_s: Mapped[float] = mapped_column(Float, default=0)
+    rights_confirmed: Mapped[bool] = mapped_column(Boolean, default=False)
+    language: Mapped[str] = mapped_column(String(10), default="fr")
+    transcript: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list)  # [{start, end, text, words}]
+    proposals: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list)  # extraits proposes
+    status: Mapped[str] = mapped_column(String(20), default="imported")  # imported|transcribed|analysed|failed
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class SocialPost(TimestampMixin, Base):
+    """Publication d'un Short sur une plateforme (YouTube, TikTok, Instagram), programmee ou non."""
+
+    __tablename__ = "social_posts"
+    __table_args__ = (UniqueConstraint("project_id", "platform"),)
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    project_id: Mapped[str] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), index=True)
+    platform: Mapped[str] = mapped_column(String(20))  # youtube|tiktok|instagram
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    caption: Mapped[str] = mapped_column(Text, default="")
+    scheduled_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)  # UTC
+    method: Mapped[str] = mapped_column(String(20), default="manual")  # youtube_api|postiz|manual
+    status: Mapped[str] = mapped_column(String(20), default="draft")  # draft|scheduled|published|exported|failed
+    external_id: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)

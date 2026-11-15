@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Droits de la fenêtre principale : ouvrir un lien dans le navigateur, rien d'autre.",
+  "description": "Droits de la fenêtre principale : ouvrir un lien web, montrer un fichier dans son dossier, lancer le moteur local.",
   "windows": ["main"],
-  "permissions": ["core:default", "opener:allow-open-url"]
+  "permissions": ["core:default", "opener:allow-open-url", "opener:allow-reveal-item-in-dir"]
 }

@@ -279,3 +279,53 @@ export interface SubtitleInfo {
   position: "bottom" | "middle" | "top";
   style: SubtitleStyle;
 }
+
+// ── Studio : voix, musique, marque, croissance, planning, videos longues, publications ──
+
+export interface VoiceEngine { id: string; name: string; local: boolean; available: boolean; detail: string }
+export interface VoiceState {
+  settings: { engine: string; speed: number; enabled: boolean };
+  engines: VoiceEngine[];
+  elevenlabs_cost_per_1000_chars: number | null;
+}
+export interface SubtitlePreset { id: string; label: string; style: SubtitleStyle & { effect: string; highlight_color: string; words_per_line: number; box: boolean; bold: boolean } }
+export interface MusicTrack { id: string; title: string; mood: string; license: string; volume: number; is_default: boolean }
+export interface Brand {
+  logo_position: string; logo_scale: number; logo_opacity: number; subtitle_preset: string; has_logo: boolean;
+}
+export interface CompetitorVideo {
+  id: string; title: string; url: string; views: number; ratio: number; outlier: boolean; duration_s: number;
+  recipe: { hook_type: string; structure: string[]; pacing: string; ending: string; why_it_works: string } | null;
+  source: string;
+}
+export interface Competitor {
+  id: string; platform: "youtube" | "tiktok"; handle: string; title: string; median_views: number;
+  last_checked_at: string | null; videos: CompetitorVideo[];
+}
+export interface StyleProfile {
+  tone?: string; sentence_length?: string; vocabulary?: string; expressions?: string[]; hooks?: string;
+  structure?: string; avoid?: string; summary: string; samples: number; source: string; updated_at: string; enabled: boolean;
+}
+export interface PerformanceRow {
+  project_id: string | null; title: string; platform: string; views: number; likes: number; comments: number;
+  average_view_duration_s: number; hook: string; duration_s: number; collected_at: string;
+}
+export interface Insights { summary: string; what_works: string[]; avoid: string[]; next_week: string[]; based_on: number; updated_at: string }
+export interface Slots { youtube: string; tiktok: string; instagram: string; days: number[]; per_day: number }
+export interface PoolIdea { id: string; title: string; hook: string; potential_score: number; reuse_risk: string; original_angle: string }
+export interface Validation {
+  project_id: string; project_title: string; step: string; label: string; kind: string; message: string;
+  planned_for: string | null; since: string;
+}
+export interface SourceVideo {
+  id: string; title: string; duration_s: number; status: string; error: string | null; segments: number; busy: boolean;
+  proposals: { start: number; end: number; title: string; hook: string; why: string }[];
+}
+export interface SocialPostT {
+  id: string; platform: "youtube" | "tiktok" | "instagram"; label: string; enabled: boolean; caption: string;
+  scheduled_at: string | null; method: "youtube_api" | "postiz" | "manual"; status: string; external_id: string | null; error: string | null;
+}
+export interface Onboarding {
+  steps: { id: string; label: string; ok: boolean; help: string }[];
+  done: boolean; data_dir: string; env_file: string; platform: string; free_space_gb: number;
+}

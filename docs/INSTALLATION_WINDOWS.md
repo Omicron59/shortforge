@@ -1,5 +1,28 @@
 # Installation sous Windows
 
+## Installer l'application (le plus simple)
+
+1. Télécharge `ShortForge_…_x64-setup.exe` (ou le `.msi`) depuis les Releases ou l'onglet Actions du dépôt.
+2. Lance-le. Windows SmartScreen peut afficher « Windows a protégé votre ordinateur » : l'installateur n'est pas
+   encore signé. Clique sur **Informations complémentaires**, puis **Exécuter quand même**.
+3. Ouvre ShortForge : le moteur local démarre tout seul et l'assistant vérifie ce qui manque.
+
+Tes projets sont dans `%APPDATA%\org.shortforge.app`, et ton fichier de réglages est `reglages.env` dans le même
+dossier (l'assistant te le montre). Voix off : la voix de Windows marche tout de suite ; pour une voix plus naturelle,
+installe Piper (voir plus bas).
+
+## Voix off naturelle avec Piper (facultatif)
+
+1. Installe Python, puis dans un terminal : `pip install piper-tts`.
+2. Télécharge une voix française (fichiers `.onnx` et `.onnx.json`), par exemple `fr_FR-siwis-medium`, depuis
+   la bibliothèque de voix Piper sur Hugging Face (`rhasspy/piper-voices`).
+3. Dans `reglages.env` : `PIPER_PATH=` le chemin de `piper.exe` (souvent dans `…\Python\Scripts\`) et
+   `PIPER_VOICE=` le chemin du fichier `.onnx`. Relance ShortForge.
+
+Piper est un programme séparé (licence GPL), lancé par ShortForge : il n'est pas inclus dans l'installateur.
+
+## Installer depuis le code (développeurs)
+
 ## Prérequis
 
 | Outil | Pourquoi | Lien |

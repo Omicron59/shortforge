@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -121,11 +122,36 @@ def write_script(session: Session, llm: LLMClient, project: Project, idea: Idea,
     duration = target_duration_s or idea.estimated_duration_s or 30
     prompt = PROMPT_TEMPLATE.format(
         title=idea.title, hook=idea.hook, angle=idea.original_angle, style=idea.visual_style or "au choix",
-        language=project.language, duration=round(duration), extra=instructions,
+        language=project.language, duration=round(duration), extra=_with_style(session, instructions),
         transitions="|".join(TRANSITIONS), importances="|".join(IMPORTANCES),
     )
     draft = _ask(llm, prompt)
     return _save(session, project, draft, idea_id=idea.id)
+
+
+def revise_script(session: Session, llm: LLMClient, project: Project, script: Script, instruction: str) -> ScriptResult:
+    """Correction en langage naturel (« rends le hook plus drôle ») : nouvelle version du script."""
+    if script.status == "approved":
+        raise ValueError("Ce script est validé : refais l'étape de validation pour le modifier.")
+    if not instruction.strip():
+        raise ValueError("Dis ce qu'il faut changer.")
+    scenes = scenes_of(session, script.id)
+    current = {"hook": script.hook, "body": script.body, "conclusion": script.conclusion,
+               "call_to_action": script.call_to_action,
+               "scenes": [{"text": s.text, "visual_prompt": s.visual_prompt, "negative_prompt": s.negative_prompt,
+                           "transition": s.transition, "duration_s": s.duration_s, "importance": s.importance}
+                          for s in scenes]}
+    prompt = (f"Voici le script actuel (JSON) :\n{json.dumps(current, ensure_ascii=False)}\n\n"
+              f"Demande de correction : {instruction.strip()}\n"
+              "Applique seulement cette demande, garde le reste tel quel, et renvoie le script complet "
+              f"dans le même format JSON.\n{_with_style(session, '')}")
+    return _save(session, project, _ask(llm, prompt), idea_id=script.idea_id)
+
+
+def _with_style(session: Session, instructions: str) -> str:
+    from shortforge.services.growth import style_hint
+
+    return "\n".join(p for p in (instructions, style_hint(session)) if p)
 
 
 def shorten_script(session: Session, llm: LLMClient, project: Project, script: Script,

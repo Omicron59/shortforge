@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Request
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -97,3 +98,18 @@ def regenerate(project_id: str, payload: RegeneratePayload, request: Request,
     if idea is None:
         raise PipelineError("Choisis d'abord une idée.")
     return _detail(script_service.write_script(session, runtime.llm, project, idea, instructions=payload.instructions))
+
+
+class RevisePayload(BaseModel):
+    instruction: str = Field(min_length=3, max_length=2000)
+
+
+@router.post("/script/revise", response_model=ScriptDetail)
+def revise(project_id: str, payload: RevisePayload, request: Request, session: Session = Depends(get_session),
+           runtime: Runtime = Depends(get_runtime)) -> ScriptDetail:
+    """Correction en langage naturel du script actuel (nouvelle version)."""
+    project = _editable(request, session, project_id)
+    script = script_service.current_script(session, project_id)
+    if script is None:
+        raise PipelineError("Aucun script à corriger.")
+    return _detail(script_service.revise_script(session, runtime.llm, project, script, payload.instruction))

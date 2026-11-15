@@ -30,6 +30,7 @@ Tendances du moment (inspiration uniquement) :
 {trends}
 Sujets déjà traités (à ne pas refaire) :
 {history}
+{extra}
 
 Propose {count} idées. Format JSON exact :
 {{"ideas": [{{"title": "...", "hook": "phrase d'accroche des 2 premières secondes",
@@ -96,6 +97,7 @@ def generate_ideas(session: Session, llm: LLMClient, project: Project, *, trend_
     prompt = PROMPT_TEMPLATE.format(
         niche=project.niche or "générale", language=project.language, count=count,
         trends=_bullets([t.title for t in trends[:30]]), history=_bullets(history[-50:]),
+        extra=_growth_hints(session),
     )
     raw = llm.generate_json(SYSTEM_PROMPT, prompt)
     items = raw.get("ideas")
@@ -165,3 +167,10 @@ def _sources_for(inspired_by: str, trends: list[Trend]) -> list[str]:
         return [json.dumps({"title": inspired_by[:200], "source": "modèle"}, ensure_ascii=False)]
     trend = next(t for t in trends if t.title == title)
     return [json.dumps({"title": trend.title, "source": trend.source, "url": trend.url}, ensure_ascii=False)]
+
+
+def _growth_hints(session: Session) -> str:
+    """Lecons tirees des resultats et style du createur (s'ils existent)."""
+    from shortforge.services.growth import insights_hint, style_hint
+
+    return "\n".join(h for h in (insights_hint(session), style_hint(session)) if h)

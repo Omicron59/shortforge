@@ -64,6 +64,31 @@ class PipelineService:
         self.session.flush()
         return project
 
+    def skip_steps(self, project: Project, names: list[StepName], *, reason: str, actor: str) -> None:
+        """Marque des etapes comme sans objet (ex. extrait d'une video importee : pas d'idee ni de script).
+
+        Decision prise par une personne (`actor`) : elle est enregistree comme une validation.
+        """
+        if not is_human_actor(actor):
+            raise PipelineError("Seule une personne peut décider de sauter des étapes.")
+        for step in project.steps:
+            if StepName(step.name) in names and step.status == StepStatus.PENDING.value:
+                self._set(step, StepStatus.RUNNING)
+                step.output = {"skipped": True, "message": reason}
+                step.validated_at, step.validated_by = utcnow(), actor.strip()
+                self._set(step, StepStatus.DONE)
+
+    def finish_without_publishing(self, project: Project, *, actor: str) -> None:
+        """L'utilisateur publie lui-meme : la publication par l'application est marquee sans objet."""
+        reason = "Publication faite à la main par l'utilisateur : rien n'a été envoyé par l'application."
+        self.skip_steps(project, [StepName.CREATE_YOUTUBE_DRAFT, StepName.PUBLISH], reason=reason, actor=actor)
+        step = self.get_step(project.id, StepName.PUBLISH)
+        if step.status == StepStatus.NEEDS_VALIDATION.value:
+            step.validated_at, step.validated_by = utcnow(), actor.strip()
+            self._set(step, StepStatus.DONE)
+        if step.status == StepStatus.DONE.value:
+            step.output = {"skipped": True, "manual": True, "message": reason}
+
     def get_project(self, project_id: str) -> Project:
         project = self.session.get(Project, project_id)
         if project is None:
@@ -71,7 +96,8 @@ class PipelineService:
         return project
 
     def list_projects(self) -> list[Project]:
-        return list(self.session.scalars(select(Project).order_by(Project.updated_at.desc())))
+        return list(self.session.scalars(select(Project).where(Project.source != "plan")
+                                         .order_by(Project.updated_at.desc())))
 
     # ── Etapes ──
 

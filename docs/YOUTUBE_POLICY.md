@@ -31,6 +31,18 @@ ShortForge aide à créer, il ne publie jamais à ta place.
 - Droits demandés : envoi de vidéos et lecture de la chaîne, rien d'autre.
 - Le jeton est gardé dans `data/youtube/token.json`, jamais en base ni dans le code.
 
+## TikTok et Instagram
+
+- Désactivés par défaut (`SOCIAL_PUBLISH_ENABLED=false`). Avec Postiz configuré, ils passent par la même
+  vérification finale et la même confirmation que YouTube. TikTok reçoit l'indication « contenu généré par IA ».
+- Sans Postiz : ShortForge prépare le fichier et le texte (avec la mention IA), et tu publies toi-même.
+
+## Formats gagnants
+
+- On lit seulement le titre, la durée et les vues publiques d'un Short concurrent. Aucune vidéo n'est téléchargée.
+- Le modèle décrit le **format** (type d'accroche, étapes, rythme, chute), jamais le contenu.
+- La nouvelle idée est comparée au Short d'origine : si elle lui ressemble trop, elle est refusée.
+
 ## Contenu synthétique
 
 - YouTube impose de déclarer les contenus réalistes modifiés ou générés par IA : ShortForge coche cette déclaration par défaut et ajoute une mention configurable (`AI_DISCLOSURE_TEXT`).

@@ -2,7 +2,7 @@
 // Les cles API ne se saisissent jamais ici : elles restent dans le fichier .env local.
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { api } from "../api/client";
+import { API_URL, api } from "../api/client";
 import { useAction } from "../api/hooks";
 import type { Budget, Importance, Provider } from "../api/types";
 import { Alert, Badge, Button, Card, Field, Loading, PageHeader, inputClass } from "../components/ui";
@@ -17,6 +17,8 @@ export default function Settings() {
         <BudgetSettings />
         <ProviderSettings />
         <EngineRules />
+        <BrandSettings />
+        <MusicLibrary />
         <TrendsAndWorkflows />
         <YouTubeSettings />
         <Alert tone="blue" title="Clés API et publication">
@@ -258,6 +260,80 @@ function YouTubeSettings() {
           Pour publier, il faut aussi YOUTUBE_PUBLISH_ENABLED=true dans le .env.
         </p>
       </div>
+    </Card>
+  );
+}
+
+function BrandSettings() {
+  const brand = useQuery({ queryKey: ["brand"], queryFn: api.brand });
+  const presets = useQuery({ queryKey: ["subtitle-presets"], queryFn: api.subtitlePresets });
+  const save = useAction((body: Parameters<typeof api.setBrand>[0]) => api.setBrand(body), "Marque enregistrée.");
+  const logo = useAction((file: File) => api.uploadLogo(file), "Logo ajouté.");
+  const b = brand.data;
+  if (!b) return null;
+  return (
+    <Card title="Marque : logo et style de sous-titres">
+      <div className="grid gap-4 md:grid-cols-4">
+        <Field label="Style de sous-titres par défaut">
+          <select className={inputClass} value={b.subtitle_preset} onChange={(e) => save.mutate({ subtitle_preset: e.target.value })}>
+            {presets.data?.presets.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
+          </select>
+        </Field>
+        <Field label="Position du logo">
+          <select className={inputClass} value={b.logo_position} onChange={(e) => save.mutate({ logo_position: e.target.value })}>
+            <option value="haut_droite">En haut à droite</option><option value="haut_gauche">En haut à gauche</option>
+            <option value="bas_droite">En bas à droite</option><option value="bas_gauche">En bas à gauche</option>
+          </select>
+        </Field>
+        <Field label={`Taille du logo (${Math.round(b.logo_scale * 100)} %)`}>
+          <input type="range" min={0.05} max={0.4} step={0.01} defaultValue={b.logo_scale} onMouseUp={(e) => save.mutate({ logo_scale: Number((e.target as HTMLInputElement).value) })} />
+        </Field>
+        <Field label={`Opacité (${Math.round(b.logo_opacity * 100)} %)`}>
+          <input type="range" min={0.1} max={1} step={0.05} defaultValue={b.logo_opacity} onMouseUp={(e) => save.mutate({ logo_opacity: Number((e.target as HTMLInputElement).value) })} />
+        </Field>
+      </div>
+      <div className="mt-4 flex flex-wrap items-center gap-3">
+        {b.has_logo && <img src={`${API_URL}/api/brand/logo?t=${Date.now()}`} alt="Logo" className="h-12 rounded bg-zinc-800 p-1" />}
+        <input type="file" accept="image/png,image/jpeg,image/webp" className="text-sm text-zinc-400"
+          onChange={(e) => { const f = e.target.files?.[0]; if (f) logo.mutate(f); }} />
+        {b.has_logo && <Button variant="ghost" className="text-xs" onClick={() => save.mutate({ remove_logo: true })}>Retirer le logo</Button>}
+      </div>
+    </Card>
+  );
+}
+
+function MusicLibrary() {
+  const tracks = useQuery({ queryKey: ["music"], queryFn: api.music });
+  const [file, setFile] = useState<File | null>(null);
+  const [license, setLicense] = useState("");
+  const [rights, setRights] = useState(false);
+  const add = useAction(() => api.uploadMusic(file!, { title: file!.name.replace(/\.[^.]+$/, ""), license, rights_confirmed: rights, volume: 0.15 }),
+    "Musique ajoutée.");
+  const patch = useAction(({ id, body }: { id: string; body: { is_default?: boolean; volume?: number } }) => api.patchMusic(id, body));
+  const remove = useAction((id: string) => api.deleteMusic(id), "Musique retirée.");
+  return (
+    <Card title="Musiques">
+      <p className="mb-3 text-xs text-zinc-500">Uniquement des musiques libres de droits ou dont tu as la licence. La musique « par défaut » est ajoutée sous la voix off de chaque Short.</p>
+      <ul className="space-y-2">
+        {tracks.data?.map((t) => (
+          <li key={t.id} className="flex flex-wrap items-center gap-3 text-sm">
+            <label className="flex items-center gap-2"><input type="radio" name="music-default" checked={t.is_default} onChange={() => patch.mutate({ id: t.id, body: { is_default: true } })} /> {t.title}</label>
+            <Badge>{t.license}</Badge>
+            <span className="text-xs text-zinc-500">volume {Math.round(t.volume * 100)} %</span>
+            <input type="range" min={0} max={0.6} step={0.05} defaultValue={t.volume} onMouseUp={(e) => patch.mutate({ id: t.id, body: { volume: Number((e.target as HTMLInputElement).value) } })} />
+            <Button variant="ghost" className="text-xs" onClick={() => remove.mutate(t.id)}>Retirer</Button>
+          </li>
+        ))}
+        {tracks.data?.some((t) => t.is_default) && (
+          <li><Button variant="ghost" className="text-xs" onClick={() => { const d = tracks.data?.find((t) => t.is_default); if (d) patch.mutate({ id: d.id, body: { is_default: false } }); }}>Pas de musique par défaut</Button></li>
+        )}
+      </ul>
+      <div className="mt-4 flex flex-wrap items-end gap-3">
+        <input type="file" accept="audio/*" className="text-sm text-zinc-400" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
+        <input className={`${inputClass} w-56`} value={license} onChange={(e) => setLicense(e.target.value)} placeholder="Licence (ex. : CC0, achetée sur…)" />
+      </div>
+      <label className="mt-2 flex items-center gap-2 text-sm"><input type="checkbox" checked={rights} onChange={(e) => setRights(e.target.checked)} /> J'ai le droit d'utiliser cette musique dans mes vidéos.</label>
+      <Button className="mt-2" disabled={!file || !rights || license.trim().length < 2} busy={add.isPending} onClick={() => add.mutate(undefined)}>Ajouter la musique</Button>
     </Card>
   );
 }

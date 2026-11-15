@@ -15,6 +15,7 @@ import json
 import secrets
 import time
 from dataclasses import asdict, dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlencode
@@ -24,7 +25,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from shortforge.config import Settings
-from shortforge.models import Asset, Idea, PipelineStep, Project, PublishJob, YoutubeChannel, utcnow
+from shortforge.models import Asset, Idea, PipelineStep, Project, PublishJob, SocialPost, YoutubeChannel, utcnow
 from shortforge.pipeline.steps import StepName
 from shortforge.services.ideas import selected_idea
 from shortforge.services.production import ProductionError
@@ -79,6 +80,9 @@ def create_draft(session: Session, settings: Settings, project: Project) -> dict
     draft.tags = [k for k in keywords if k.strip()][:15]
     draft.privacy, draft.ai_disclosure, draft.made_for_kids = "private", True, False
     session.flush()
+    from shortforge.services import social
+
+    social.ensure_posts(session, settings, project)
     return {"publish_job_id": draft.id, "title": draft.title, "privacy": draft.privacy,
             "message": "Brouillon local prêt : rien n'a été envoyé à YouTube."}
 
@@ -95,6 +99,10 @@ def update_draft(session: Session, settings: Settings, project_id: str, changes:
         if key in changes and changes[key] is not None:
             setattr(draft, key, changes[key])
     draft.human_approved_at = None  # toute modification annule la confirmation precedente
+    post = session.scalars(select(SocialPost).where(SocialPost.project_id == project_id,
+                                                    SocialPost.platform == "youtube")).first()
+    if post is not None and post.status in ("draft", "failed"):
+        post.caption = draft.description  # YouTube : le texte publie est celui du brouillon
     session.flush()
     return draft
 
@@ -120,8 +128,16 @@ def final_checks(session: Session, settings: Settings, project: Project,
     """Tout ce qui doit etre vrai avant une publication, ligne par ligne."""
     checks: list[Check] = []
     add = checks.append
-    add(Check("publish_enabled", "Publication activée dans le .env", settings.youtube_publish_enabled,
-              "" if settings.youtube_publish_enabled else "YOUTUBE_PUBLISH_ENABLED=false (réglage par défaut)"))
+    from shortforge.services import social
+
+    auto = social.automatic_posts(session, project.id)
+    youtube_auto = any(p.platform == "youtube" for p in auto)
+    enabled = settings.youtube_publish_enabled or settings.social_publish_enabled
+    add(Check("publish_enabled", "Publication automatique activée dans le .env", enabled,
+              "" if enabled else "YOUTUBE_PUBLISH_ENABLED=false et SOCIAL_PUBLISH_ENABLED=false (réglage par défaut)"))
+    add(Check("targets", "Au moins une plateforme à publier automatiquement", bool(auto),
+              ", ".join(social.LABELS[p.platform] for p in auto) if auto
+              else "aucune : active une plateforme ou publie toi-même (export manuel)"))
 
     render = latest_render(session, project.id)
     asset = session.get(Asset, render.asset_id) if render and render.asset_id else None
@@ -171,10 +187,17 @@ def final_checks(session: Session, settings: Settings, project: Project,
     reuse_ok = idea is None or idea.reuse_risk != "high"
     add(Check("originality", "Idée originale (pas de risque élevé de contenu réutilisé)", reuse_ok,
               "" if reuse_ok else "trop proche d'une vidéo existante"))
-    channel = default_channel(session)
-    token_ok = bool(channel and Path(channel.token_path).is_file())
-    add(Check("channel", "Chaîne YouTube connectée", token_ok,
-              channel.title if token_ok and channel else "connecte ta chaîne dans Paramètres"))
+    if youtube_auto:
+        channel = default_channel(session)
+        token_ok = bool(channel and Path(channel.token_path).is_file())
+        add(Check("channel", "Chaîne YouTube connectée", token_ok,
+                  channel.title if token_ok and channel else "connecte ta chaîne dans Paramètres"))
+    quality = _quality(session, project.id)
+    if quality is not None:
+        add(Check("quality", f"Contrôle qualité : {quality['score']:g}/10 (minimum {settings.quality_min_score:g})",
+                  quality["score"] >= settings.quality_min_score, ", ".join(quality.get("issues", []))))
+    for check_id, label, ok, detail in social.post_checks(session, settings, project):
+        add(Check(check_id, label, ok, detail))
     return checks
 
 
@@ -264,15 +287,18 @@ class YouTubeClient:
         self._save_token(path, {**stored, **token})
         return str(token["access_token"])
 
-    def upload(self, channel: YoutubeChannel, video: Path, draft: PublishJob) -> str:
+    def upload(self, channel: YoutubeChannel, video: Path, draft: PublishJob,
+               publish_at: datetime | None = None) -> str:
         """Envoi en deux temps (session puis fichier). Renvoie l'identifiant YouTube de la video."""
         token = self.access_token(channel)
-        metadata = {
+        metadata: dict[str, Any] = {
             "snippet": {"title": draft.title, "description": draft.description, "tags": draft.tags,
                         "categoryId": draft.category_id or "22"},
             "status": {"privacyStatus": draft.privacy, "selfDeclaredMadeForKids": draft.made_for_kids,
                        "containsSyntheticMedia": draft.ai_disclosure},
         }
+        if publish_at is not None:  # programmee : privee jusqu'a l'heure choisie (exige par YouTube)
+            metadata["status"].update({"privacyStatus": "private", "publishAt": publish_at.isoformat() + "Z"})
         size = video.stat().st_size
         start = self._http.post(UPLOAD_URL, params={"uploadType": "resumable", "part": "snippet,status"},
                                 headers={"Authorization": f"Bearer {token}", "X-Upload-Content-Type": "video/mp4",
@@ -324,27 +350,45 @@ class YouTubeClient:
         raise YouTubeError(f"Erreur YouTube {res.status_code} : {message or 'réponse inattendue'}.")
 
 
-def publish(session: Session, settings: Settings, project: Project, client: YouTubeClient, actor: str) -> PublishJob:
+def _quality(session: Session, project_id: str) -> dict[str, Any] | None:
+    step = _step(session, project_id, StepName.RENDER_VIDEO)
+    quality = (step.output or {}).get("quality") if step else None
+    return quality if isinstance(quality, dict) and "score" in quality else None
+
+
+def publish(session: Session, settings: Settings, project: Project, client: YouTubeClient, actor: str,
+            *, postiz: Any = None) -> dict[str, str]:
     """Envoi reel. Appele seulement apres le garde-fou ; refait la verification finale juste avant."""
+    from shortforge.integrations.postiz import PostizClient
+    from shortforge.services import social
+
+    social.ensure_posts(session, settings, project)
     failing = [c for c in final_checks(session, settings, project) if not c.ok]
     if failing:
         raise PublishBlockedError([f"{c.label} : {c.detail}" if c.detail else c.label for c in failing])
     draft = current_draft(session, project.id)
-    channel = default_channel(session)
-    render = latest_render(session, project.id)
-    assert draft is not None and channel is not None and render is not None and render.asset_id  # verifie plus haut
-    asset = session.get(Asset, render.asset_id)
-    assert asset is not None
-    draft.status, draft.channel_id = "uploading", channel.id
+    assert draft is not None  # verifie plus haut
     draft.human_approved_by, draft.human_approved_at = actor, utcnow()
-    session.flush()
-    try:
-        draft.youtube_video_id = client.upload(channel, Path(asset.path), draft)
-    except YouTubeError as exc:
-        draft.status, draft.error = "failed", str(exc)
-        session.flush()
-        raise
-    draft.status, draft.error = "published", None
-    session.flush()
-    return draft
 
+    def youtube_upload(post: Any) -> str:
+        channel = default_channel(session)
+        render = latest_render(session, project.id)
+        asset = session.get(Asset, render.asset_id) if render and render.asset_id else None
+        if channel is None or asset is None:
+            raise YouTubeError("Chaîne ou rendu introuvable.")
+        draft.status, draft.channel_id = "uploading", channel.id
+        try:
+            draft.youtube_video_id = client.upload(channel, Path(asset.path), draft, publish_at=post.scheduled_at)
+        except YouTubeError as exc:
+            draft.status, draft.error = "failed", str(exc)
+            raise
+        draft.status, draft.error = "published", None
+        return str(draft.youtube_video_id)
+
+    if postiz is None:
+        key = settings.postiz_api_key.get_secret_value() if settings.postiz_api_key else None
+        postiz = PostizClient(settings.postiz_url, key)
+    results = social.publish_posts(session, settings, project, postiz=postiz, youtube_upload=youtube_upload,
+                                   actor=actor)
+    session.flush()
+    return results

@@ -32,6 +32,7 @@ from shortforge.routers import (
     providers,
     release,
     status,
+    studio,
 )
 from shortforge.routers import settings as settings_router
 from shortforge.runtime import Runtime, build_runtime
@@ -96,6 +97,6 @@ def create_app(settings: Settings | None = None, registry: HandlerRegistry | Non
         return JSONResponse(status_code=http.HTTP_502_BAD_GATEWAY, content={"detail": str(exc)})
 
     for module in (health, status, projects, content, production, providers, budget, comfyui, settings_router,
-                   library, release):
+                   library, release, studio):
         app.include_router(module.router)
     return app

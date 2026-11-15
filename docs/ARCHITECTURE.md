@@ -115,6 +115,36 @@ Le mode personnalisé lit ses règles dans les paramètres. Veo 3 n'est jamais c
 | GET / POST | `/api/youtube/status`, `/api/youtube/connect` | État de la publication, connexion de la chaîne |
 | GET | `/api/youtube/oauth/callback` | Retour de la connexion Google |
 
+## Studio (0.5.0)
+
+| Module | Rôle |
+|---|---|
+| `integrations/tts.py` | Moteurs de voix : Piper (programme externe), voix du système, ElevenLabs |
+| `integrations/whisper.py` | Transcription locale faster-whisper (facultative) |
+| `integrations/youtube_data.py` | Lecture publique YouTube (concurrents, statistiques) |
+| `integrations/postiz.py` | Programmation TikTok et Instagram par Postiz |
+| `services/voice.py` | Voix off par scène, piste complète, minutage des mots, confirmation ElevenLabs |
+| `services/subtitles.py` | 20 styles, 7 effets, ASS 1080x1920 |
+| `services/music.py` | Bibliothèque de musiques (droits confirmés) |
+| `services/quality.py` | Contrôle image par image et note sur 10 |
+| `services/growth.py` | Concurrents, formats gagnants, style personnel, résultats et leçons |
+| `services/planning.py` | Planning de la semaine, créneaux, boîte de validation |
+| `services/clips.py` | Vidéo longue → Shorts |
+| `services/social.py` | Publications par plateforme, programmation, export manuel |
+| `routers/studio.py` | Routes de toutes ces fonctions |
+
+Le pilote automatique (`PipelineRunner.submit(autopilot=True)`) enchaîne les étapes automatiques et s'arrête
+à la première validation humaine ou au premier échec.
+
+## Application installée
+
+- Le backend est empaqueté avec PyInstaller (`backend/packaging/shortforge-backend.spec`) et copié dans les
+  ressources de l'application (`tauri.release.conf.json`).
+- Au démarrage, Tauri lance `shortforge-backend` avec `SHORTFORGE_DATA_DIR` (dossier de l'application) et
+  `SHORTFORGE_ENV_FILE` (`reglages.env`, créé depuis `.env.example`) ; il l'arrête à la fermeture.
+- `.github/workflows/release.yml` fabrique les installateurs sur des machines Windows et macOS (puce Apple et Intel)
+  et vérifie que le moteur empaqueté démarre.
+
 ## Interface (apps/desktop)
 
 Tauri 2 + React 18 + TypeScript + Tailwind, entièrement en français. Elle parle au backend sur

@@ -1,0 +1,104 @@
+name: Versions Windows et macOS
+
+# Fabrique les installateurs : Windows (.msi et .exe), macOS puce Apple (.dmg) et macOS Intel (.dmg).
+# Lancement : a la main (onglet Actions) ou en poussant une etiquette v* (brouillon de version cree).
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Windows
+            os: windows-latest
+            target: x86_64-pc-windows-msvc
+          - name: macOS (puce Apple)
+            os: macos-latest
+            target: aarch64-apple-darwin
+          - name: macOS (Intel)
+            os: macos-15-intel
+            target: x86_64-apple-darwin
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Moteur local (PyInstaller)
+        working-directory: backend
+        shell: bash
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[media,packaging]"
+          pyinstaller packaging/shortforge-backend.spec --noconfirm
+          rm -rf ../apps/desktop/src-tauri/backend-dist
+          cp -R dist/shortforge-backend ../apps/desktop/src-tauri/backend-dist
+
+      - name: Le moteur empaquete demarre
+        shell: bash
+        run: |
+          export SHORTFORGE_DATA_DIR="$RUNNER_TEMP/sf-data" SHORTFORGE_ENV_FILE="$RUNNER_TEMP/sf-data/reglages.env" SHORTFORGE_PORT=8799
+          ./apps/desktop/src-tauri/backend-dist/shortforge-backend &
+          for i in $(seq 1 60); do
+            if curl -fs http://127.0.0.1:8799/api/health; then echo; break; fi
+            sleep 2
+          done
+          curl -fs http://127.0.0.1:8799/api/health | grep '"youtube_publish_enabled":false'
+          test -f "$RUNNER_TEMP/sf-data/reglages.env"
+          kill %1 || true
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Application de bureau (Tauri)
+        working-directory: apps/desktop
+        shell: bash
+        run: |
+          npm ci
+          npm run tauri build -- --target ${{ matrix.target }} --config src-tauri/tauri.release.conf.json
+
+      - name: Rassembler les installateurs
+        shell: bash
+        run: |
+          mkdir -p installateurs
+          find apps/desktop/src-tauri/target/${{ matrix.target }}/release/bundle \
+            \( -name "*.msi" -o -name "*-setup.exe" -o -name "*.dmg" \) -exec cp {} installateurs/ \;
+          ls -la installateurs
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ShortForge-${{ matrix.target }}
+          path: installateurs/*
+          if-no-files-found: error
+
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v') && !cancelled()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: installateurs
+          merge-multiple: true
+      - name: Brouillon de version
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" installateurs/* --repo "${GITHUB_REPOSITORY}" --draft \
+            --title "ShortForge ${GITHUB_REF_NAME}" \
+            --notes "Installateurs non signés : voir docs/INSTALLATION_WINDOWS.md et docs/INSTALLATION_MAC.md."

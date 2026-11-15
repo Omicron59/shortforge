@@ -27,6 +27,21 @@ import type {
   YoutubeStatus,
   SubtitleInfo,
   SubtitleStyle,
+  VoiceState,
+  SubtitlePreset,
+  MusicTrack,
+  Brand,
+  Competitor,
+  CompetitorVideo,
+  StyleProfile,
+  PerformanceRow,
+  Insights,
+  Slots,
+  PoolIdea,
+  Validation,
+  SourceVideo,
+  SocialPostT,
+  Onboarding,
 } from "./types";
 
 export const API_URL: string = import.meta.env.VITE_API_URL ?? "http://127.0.0.1:8787";
@@ -56,9 +71,23 @@ export async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return body as T;
 }
 
-const get = <T,>(path: string) => request<T>(path);
+export const get = <T,>(path: string) => request<T>(path);
 const send = <T,>(method: string, path: string, body?: unknown) =>
   request<T>(path, { method, body: body === undefined ? undefined : JSON.stringify(body) });
+
+/** Envoi d'un fichier brut (musique, logo, video longue) : le backend l'ecrit par morceaux. */
+export async function upload<T>(path: string, file: File, params: Record<string, string | number | boolean>): Promise<T> {
+  const query = new URLSearchParams({ filename: file.name, ...Object.fromEntries(Object.entries(params).map(([k, v]) => [k, String(v)])) });
+  let res: Response;
+  try {
+    res = await fetch(`${API_URL}${path}?${query}`, { method: "PUT", body: file });
+  } catch {
+    throw new ApiError("Moteur local injoignable : lance le backend.", 0);
+  }
+  const body: unknown = await res.json().catch(() => null);
+  if (!res.ok) throw new ApiError(errorMessage(res.status, body), res.status);
+  return body as T;
+}
 
 export const assetUrl = (assetId: string) => `${API_URL}/api/assets/${assetId}/file`;
 export const eventsUrl = (projectId: string) => `${API_URL.replace(/^http/, "ws")}/api/projects/${projectId}/events`;
@@ -142,4 +171,68 @@ export const api = {
   finalCheck: (id: string) => get<FinalCheck>(`/api/projects/${id}/final-check`),
   youtubeStatus: () => get<YoutubeStatus>("/api/youtube/status"),
   youtubeConnect: () => send<{ url: string }>("POST", "/api/youtube/connect"),
+  reviseScript: (id: string, instruction: string) =>
+    send<ScriptDetail>("POST", `/api/projects/${id}/script/revise`, { instruction }),
+  autopilot: (id: string) => send<{ detail: string }>("POST", `/api/projects/${id}/autopilot`),
+
+  voice: () => get<VoiceState>("/api/voice"),
+  setVoice: (body: Partial<VoiceState["settings"]>) => send<VoiceState>("PUT", "/api/voice", body),
+  voiceSample: (text?: string) => send<{ engine: string; url: string }>("POST", "/api/voice/sample", text ? { text } : {}),
+  subtitlePresets: () => get<{ presets: SubtitlePreset[]; effects: Record<string, string> }>("/api/subtitle-presets"),
+  setSubtitlePreset: (id: string, preset: string) => send<SubtitleInfo>("PUT", `/api/projects/${id}/subtitles`, { preset }),
+
+  music: () => get<MusicTrack[]>("/api/music"),
+  uploadMusic: (file: File, p: { title: string; license: string; rights_confirmed: boolean; volume: number }) =>
+    upload<MusicTrack>("/api/music/upload", file, p),
+  patchMusic: (trackId: string, body: { is_default?: boolean; volume?: number }) => send<MusicTrack>("PATCH", `/api/music/${trackId}`, body),
+  deleteMusic: (trackId: string) => send<{ deleted: boolean }>("DELETE", `/api/music/${trackId}`),
+  brand: () => get<Brand>("/api/brand"),
+  setBrand: (body: Partial<Brand> & { remove_logo?: boolean }) => send<Brand>("PUT", "/api/brand", body),
+  uploadLogo: (file: File) => upload<Brand>("/api/brand/logo", file, {}),
+
+  competitors: () => get<Competitor[]>("/api/competitors"),
+  addCompetitor: (platform: string, handle: string) => send<Competitor>("POST", "/api/competitors", { platform, handle }),
+  refreshCompetitor: (cid: string) => send<Competitor>("POST", `/api/competitors/${cid}/refresh`),
+  addCompetitorVideo: (cid: string, body: { title: string; views: number; url?: string; duration_s?: number }) =>
+    send<Competitor>("POST", `/api/competitors/${cid}/videos`, body),
+  deleteCompetitor: (cid: string) => send<{ deleted: boolean }>("DELETE", `/api/competitors/${cid}`),
+  recipe: (vid: string) => send<CompetitorVideo["recipe"]>("POST", `/api/competitor-videos/${vid}/recipe`),
+  makeShort: (vid: string, body: { niche: string; language: string; video_mode: VideoMode }) =>
+    send<{ project_id: string; title: string; reuse_risk: string }>("POST", `/api/competitor-videos/${vid}/make-short`, body),
+
+  style: () => get<StyleProfile | null>("/api/style"),
+  learnStyle: (samples: string[]) => send<StyleProfile>("POST", "/api/style/learn", { samples }),
+  learnStyleFromVideos: () => send<StyleProfile>("POST", "/api/style/learn-from-videos"),
+  toggleStyle: (enabled: boolean) => send<StyleProfile>("PUT", `/api/style/enabled?enabled=${enabled}`),
+
+  performance: () => get<{ rows: PerformanceRow[]; insights: Insights | null }>("/api/performance"),
+  addStats: (body: { project_id: string; platform: string; views: number; likes: number; comments: number }) =>
+    send<{ rows: PerformanceRow[] }>("POST", "/api/performance/manual", body),
+  refreshStats: () => send<{ updated: number }>("POST", "/api/performance/refresh"),
+  insights: () => send<Insights>("POST", "/api/performance/insights"),
+
+  slots: () => get<Slots>("/api/planning/slots"),
+  setSlots: (body: Partial<Slots>) => send<Slots>("PUT", "/api/planning/slots", body),
+  planningPool: (body: { niche: string; language: string; video_mode: VideoMode; count: number }) =>
+    send<{ pool_id: string; dates: string[]; ideas: PoolIdea[]; warnings: string[] }>("POST", "/api/planning/pool", body),
+  planningWeek: (body: { pool_id: string; idea_ids: string[] }) =>
+    send<{ projects: { id: string; title: string; planned_for: string }[] }>("POST", "/api/planning/week", body),
+  validations: () => get<Validation[]>("/api/validations"),
+
+  sources: () => get<SourceVideo[]>("/api/sources"),
+  uploadSource: (file: File, p: { title: string; rights_confirmed: boolean; language: string }) =>
+    upload<SourceVideo>("/api/sources/upload", file, p),
+  analyseSource: (sid: string, count: number) => send<{ detail: string }>("POST", `/api/sources/${sid}/analyse?count=${count}`),
+  createClips: (sid: string, indexes: number[]) => send<{ projects: { id: string; title: string }[] }>("POST", `/api/sources/${sid}/clips`, { indexes }),
+  deleteSource: (sid: string) => send<{ deleted: boolean }>("DELETE", `/api/sources/${sid}`),
+
+  posts: (id: string) => get<SocialPostT[]>(`/api/projects/${id}/posts`),
+  patchPost: (postId: string, body: { caption?: string; enabled?: boolean; scheduled_at?: string; clear_schedule?: boolean }) =>
+    send<SocialPostT>("PATCH", `/api/posts/${postId}`, body),
+  postExported: (postId: string) => send<SocialPostT>("POST", `/api/posts/${postId}/exported`),
+  postPublished: (postId: string, url: string) => send<SocialPostT>("POST", `/api/posts/${postId}/published`, { url }),
+  finishManual: (id: string) => send<{ status: string }>("POST", `/api/projects/${id}/finish-manual`),
+
+  onboarding: () => get<Onboarding>("/api/onboarding"),
+  onboardingDone: () => send<{ done: boolean }>("POST", "/api/onboarding/done"),
 };

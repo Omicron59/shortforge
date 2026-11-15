@@ -16,6 +16,7 @@ from shortforge.deps import build_service, get_runtime, get_session, get_setting
 from shortforge.models import Subtitle
 from shortforge.runtime import Runtime
 from shortforge.services import render as render_service
+from shortforge.services import subtitles as subs
 from shortforge.services import youtube
 from shortforge.services.safety import content_issues
 
@@ -37,6 +38,7 @@ class RenderOut(BaseModel):
 
 
 class SubtitleStyle(BaseModel):
+    preset: str | None = None
     position: Literal["bottom", "middle", "top"] | None = None
     style: dict[str, Any] | None = None
 
@@ -71,13 +73,17 @@ def get_render(project_id: str, session: Session = Depends(get_session)) -> Rend
     return RenderOut.model_validate(render) if render else None
 
 
+@router.get("/subtitle-presets")
+def subtitle_presets() -> dict[str, Any]:
+    return {"presets": subs.presets_list(), "effects": subs.EFFECTS}
+
+
 @router.get("/projects/{project_id}/subtitles")
 def get_subtitles(project_id: str, session: Session = Depends(get_session)) -> dict[str, Any]:
     subtitle = render_service.current_subtitle(session, project_id)
-    if subtitle is None:
-        return {"segments": [], "position": "bottom", "style": render_service.DEFAULT_STYLE}
-    return {"segments": subtitle.segments, "position": subtitle.position,
-            "style": {**render_service.DEFAULT_STYLE, **subtitle.style}}
+    style = render_service.subtitle_style(session, subtitle)
+    return {"segments": subtitle.segments if subtitle else [], "position": style["position"],
+            "preset": style["preset"], "style": style}
 
 
 @router.put("/projects/{project_id}/subtitles")
@@ -87,13 +93,19 @@ def set_subtitle_style(project_id: str, payload: SubtitleStyle, request: Request
     build_service(request, session).get_project(project_id)
     subtitle = render_service.current_subtitle(session, project_id)
     if subtitle is None:
-        subtitle = Subtitle(project_id=project_id, style=dict(render_service.DEFAULT_STYLE))
+        subtitle = Subtitle(project_id=project_id, style={})
         session.add(subtitle)
+    style = dict(subtitle.style or {})
+    if payload.preset is not None:
+        if payload.preset not in subs.PRESETS:
+            raise youtube.YouTubeError("Style de sous-titres inconnu.")
+        style = {"preset": payload.preset}  # un nouveau style repart de ses propres reglages
     if payload.position:
+        style["position"] = payload.position
         subtitle.position = payload.position
     if payload.style is not None:
-        allowed = set(render_service.DEFAULT_STYLE)
-        subtitle.style = {**(subtitle.style or {}), **{k: v for k, v in payload.style.items() if k in allowed}}
+        style.update({k: v for k, v in payload.style.items() if k in subs.EDITABLE})
+    subtitle.style = style
     session.flush()
     return get_subtitles(project_id, session)
 

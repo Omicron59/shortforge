@@ -1,5 +1,25 @@
 # Journal des changements
 
+## 0.5.0 — 15/11/2026
+
+### Ajouté
+- Voix off locale : Piper, voix de Windows (SAPI), voix de macOS (`say`) ; ElevenLabs en option avec confirmation du coût. Scènes allongées si la voix dépasse.
+- Sous-titres animés : 20 styles, 7 effets (surlignage, rebond, karaoké, mot à mot, pop, fondu), minutage mot à mot avec Whisper si installé.
+- Musiques personnelles (droits confirmés), logo incrusté, style de sous-titres par défaut (marque).
+- Contrôle vidéo image par image (passages noirs, images figées, silences, volume) avec une note sur 10 exigée pour publier.
+- Formats gagnants : suivi de 5 comptes YouTube (TikTok à la main), Shorts à 2x la médiane, recette du format, nouveau Short original en un clic.
+- Style d'écriture personnel et correction du script en une phrase.
+- Résultats des Shorts (YouTube automatique, TikTok et Instagram à la main) et leçons utilisées pour les idées suivantes.
+- Planning de la semaine, pilote automatique jusqu'à chaque validation, boîte « À valider ».
+- Vidéo longue → plusieurs Shorts : transcription locale, meilleurs passages, recadrage 9:16, sous-titres.
+- Publication sur YouTube (programmation), TikTok et Instagram (Postiz) ou export manuel ; créneaux par plateforme.
+- Assistant de premier lancement.
+- Installateurs Windows (.exe, .msi) et macOS (.dmg puce Apple et Intel) avec le moteur local inclus ; fichier de réglages créé au premier lancement.
+
+### Modifié
+- Le garde-fou de publication accepte YouTube ou Postiz, tous deux désactivés par défaut.
+- Une ligne vide dans le fichier de réglages vaut « non renseigné ».
+
 ## 0.4.0 — 15/11/2026
 
 ### Ajouté

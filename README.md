@@ -1,17 +1,32 @@
 # ShortForge
 
-Application Windows **open source** (licence MIT) pour créer des YouTube Shorts avec l'IA, **en local** sur ton PC : idées, script, images et vidéos via ComfyUI et ta carte graphique, voix off, sous-titres, montage vertical 1080x1920, puis brouillon YouTube.
+Application **Windows et macOS**, **open source** (licence MIT), pour créer des Shorts avec l'IA, **en local** sur ton ordinateur. Elle prend en charge :
+- les idées, les scripts écrits dans ton style, les images et vidéos via ComfyUI ;
+- la voix off locale et les sous-titres animés ;
+- le montage vertical 1080x1920 et le contrôle qualité ;
+- la publication sur YouTube Shorts, TikTok et Instagram Reels, toujours après ta validation.
 
 Tu choisis pour chaque Short, ou pour chaque scène, entre des moteurs vidéo **locaux gratuits** (ComfyUI, Wan 2.2, LTX Video, CogVideoX) et des **fournisseurs externes payants** (Gemini Omni 1.2 Flash, Kling, Hailuo/MiniMax, Runway, Pika, Veo 3), avec un budget qui bloque toute dépense non prévue.
 
-> **État : chaîne complète de l'idée au MP4, publication YouTube gardée.** Idées et scripts avec Ollama, images et vidéos avec ComfyUI ou 11 moteurs, budget avec confirmation de chaque dépense, montage FFmpeg 1080x1920 avec sous-titres, validation humaine obligatoire, brouillon YouTube et vérification finale, interface Tauri en français. Publication désactivée par défaut. Restent : voix off, minutage Whisper, musique et miniature. Voir [ROADMAP](docs/ROADMAP.md).
+> **État : version 0.5.0.** Installateurs Windows et macOS fabriqués par GitHub Actions. Publication désactivée par défaut. Voir [ROADMAP](docs/ROADMAP.md).
+
+## Fonctions
+
+| Créer | Grandir | Publier |
+|---|---|---|
+| Idées avec Ollama (tendances = inspiration) | Suivi de 5 comptes, Shorts à 2x leur médiane | YouTube Shorts (API officielle), programmation |
+| Scripts dans ton style, corrigés en une phrase | Recette d'un format gagnant → Short 100 % nouveau | TikTok et Instagram par Postiz, ou export manuel |
+| 11 moteurs vidéo, local ou en ligne, budget plafonné | Analyse de tes résultats → leçons pour la semaine | Créneaux horaires par plateforme |
+| Voix off locale (Piper, voix Windows/macOS) ou ElevenLabs | Planning de la semaine, pilote automatique | Vérification finale et validation humaine |
+| 20 styles de sous-titres animés, logo, musique | Vidéo longue → plusieurs Shorts (Whisper local) | Contrôle vidéo image par image, note sur 10 |
 
 ## Règles du projet
 
 - **Aucune publication sans validation humaine explicite.** La publication YouTube est désactivée par défaut (`YOUTUBE_PUBLISH_ENABLED=false`).
 - Les clés API restent dans le fichier `.env` local, jamais dans le code.
 - Chaque étape du pipeline est enregistrée dans SQLite : un projet interrompu reprend là où il s'était arrêté.
-- Les tendances servent d'inspiration, jamais de source à recopier ; aucune vidéo YouTube n'est copiée.
+- Les tendances et les Shorts concurrents servent d'inspiration, jamais de source à recopier : seul le **format** (accroche, structure, rythme) d'un Short qui marche peut être repris, avec une histoire entièrement nouvelle. Aucune vidéo n'est téléchargée.
+- TikTok et Instagram sont désactivés par défaut aussi (`SOCIAL_PUBLISH_ENABLED=false`) : sans eux, tu publies toi-même.
 - Pas de contenu violent, sexuel, haineux, illégal ou trompeur. Voir [YOUTUBE_POLICY](docs/YOUTUBE_POLICY.md).
 
 ## Le pipeline
@@ -24,7 +39,15 @@ generate_ideas → select_idea* → write_script → approve_script* → create_
 
 `*` = étape de validation humaine. Statuts : `pending`, `running`, `done`, `failed`, `needs_validation`, `cancelled`.
 
-## Démarrage rapide (backend)
+## Installer l'application
+
+Télécharge l'installateur dans l'onglet **Actions** du dépôt (workflow « Versions Windows et macOS ») ou dans les **Releases** :
+- **Windows** : `ShortForge_0.5.0_x64-setup.exe` ou `.msi`. Guide : [INSTALLATION_WINDOWS](docs/INSTALLATION_WINDOWS.md).
+- **macOS** : `ShortForge_0.5.0_aarch64.dmg` (puce Apple) ou `_x64.dmg` (Intel). Guide : [INSTALLATION_MAC](docs/INSTALLATION_MAC.md).
+
+Le moteur local est inclus et démarre tout seul. Il reste à installer FFmpeg, Ollama et, si tu veux, ComfyUI : l'assistant du premier lancement te guide.
+
+## Démarrage rapide pour développer (backend)
 
 ```powershell
 cd backend

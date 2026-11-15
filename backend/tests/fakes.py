@@ -118,6 +118,44 @@ class FakeGoogleApi:
         return httpx.Response(404)
 
 
+class FakeTTS:
+    """Voix simulee : un son de 0,3 s par mot (vrai fichier WAV via FFmpeg, si present)."""
+
+    id, name, local = "fake", "Voix de test", True
+
+    def __init__(self) -> None:
+        self.texts: list[str] = []
+
+    def status(self) -> Any:
+        from shortforge.integrations.tts import EngineStatus
+
+        return EngineStatus(self.id, self.name, True, True, "test")
+
+    def estimate_cost(self, text: str) -> float | None:
+        return 0.0
+
+    def synthesize(self, text: str, dest: Path, *, language: str = "fr", speed: float = 1.0) -> Path:
+        import subprocess
+
+        self.texts.append(text)
+        duration = max(0.3, 0.3 * len(text.split()))
+        subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", f"sine=frequency=220:duration={duration}",
+                        "-af", "volume=4", "-ar", "48000", "-ac", "2", str(dest)], check=True)
+        return dest
+
+
+class FakeTranscriber:
+    def __init__(self, segments: list[dict[str, Any]] | None = None, *, available: bool = False) -> None:
+        self.segments = segments or []
+        self._available = available
+
+    def available(self) -> bool:
+        return self._available
+
+    def transcribe(self, path: Path, *, language: str = "fr") -> list[dict[str, Any]]:
+        return self.segments
+
+
 def make_runtime(settings: Settings, llm: FakeLLM, comfy: FakeComfyServer | None = None,
                  provider_handler: Callable[[httpx.Request], httpx.Response] | None = None,
                  trends: list[TrendSource] | None = None) -> Runtime:
@@ -131,7 +169,8 @@ def make_runtime(settings: Settings, llm: FakeLLM, comfy: FakeComfyServer | None
 
     return Runtime(settings=settings, llm=llm, comfy=client, library=library,
                    trend_sources=lambda _s: trends if trends is not None else [ManualTrendSource([])],
-                   providers=providers, sleep=lambda _: None)
+                   providers=providers, sleep=lambda _: None, tts_override=FakeTTS(),
+                   transcriber=FakeTranscriber())
 
 
 def add_video_workflow(library: WorkflowLibrary, workflow_id: str = "comfyui_local") -> None:

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import shutil
+import subprocess
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
@@ -68,3 +70,21 @@ def service(session: Session, settings: Settings, registry: HandlerRegistry) -> 
 def client(settings: Settings) -> Iterator[TestClient]:
     with TestClient(create_app(settings, full_registry())) as c:
         yield c
+
+
+FFMPEG = shutil.which("ffmpeg") and shutil.which("ffprobe")
+
+
+@pytest.fixture(scope="session")
+def media(tmp_path_factory: pytest.TempPathFactory) -> dict[str, bytes]:
+    if not FFMPEG:
+        pytest.skip("FFmpeg absent")
+    folder = tmp_path_factory.mktemp("media")
+    png, mp4 = folder / "img.png", folder / "clip.mp4"
+    subprocess.run(["ffmpeg", "-v", "error", "-f", "lavfi", "-i", "testsrc=size=768x1344", "-frames:v", "1",
+                    str(png)], check=True)
+    subprocess.run(["ffmpeg", "-v", "error", "-f", "lavfi", "-i", "testsrc=size=720x1280:rate=24", "-t", "2",
+                    "-pix_fmt", "yuv420p", str(mp4)], check=True)  # plus court que la scene : prolonge
+    return {"png": png.read_bytes(), "mp4": mp4.read_bytes()}
+
+

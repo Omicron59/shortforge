@@ -32,3 +32,6 @@ apps/desktop/src-tauri/binaries/
 Thumbs.db
 apps/desktop/src-tauri/gen/
 *.tsbuildinfo
+backend/build/
+backend/dist/
+apps/desktop/src-tauri/backend-dist/

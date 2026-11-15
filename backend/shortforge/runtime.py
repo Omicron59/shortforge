@@ -35,7 +35,29 @@ class Runtime:
     providers: Callable[[Session], ProviderRegistry]
     sleep: Callable[[float], None] = field(default=time.sleep)
     youtube_transport: httpx.BaseTransport | None = None  # remplace par un faux dans les tests
+    http_transport: httpx.BaseTransport | None = None  # ElevenLabs, Postiz, API YouTube publique (tests)
+    transcriber: Any = None  # faster-whisper par defaut ; un faux dans les tests
+    tts_override: Any = None  # moteur de voix impose (tests)
     _youtube: Any = None
+
+    def postiz(self) -> Any:
+        from shortforge.integrations.postiz import PostizClient
+
+        key = self.settings.postiz_api_key.get_secret_value() if self.settings.postiz_api_key else None
+        return PostizClient(self.settings.postiz_url, key, transport=self.http_transport)
+
+    def youtube_data(self) -> Any:
+        from shortforge.integrations.youtube_data import YouTubeData
+
+        key = self.settings.youtube_api_key.get_secret_value() if self.settings.youtube_api_key else None
+        return YouTubeData(key, transport=self.http_transport)
+
+    def get_transcriber(self) -> Any:
+        if self.transcriber is None:
+            from shortforge.integrations.whisper import FasterWhisper
+
+            self.transcriber = FasterWhisper(self.settings.whisper_model)
+        return self.transcriber
 
     @property
     def youtube(self) -> YouTubeClient:

@@ -1,7 +1,7 @@
 """Branche les services sur les etapes du pipeline, des idees jusqu'a la publication.
 
-Voix off et musique ne sont pas encore generees : leurs etapes se terminent en le disant, et le
-montage utilise une piste muette. Les sous-titres sont calcules a partir du texte des scenes.
+Un Short « genere » suit toutes les etapes. Un extrait de video longue (`source == "clip"`) garde
+son son d'origine et ses sous-titres viennent de la transcription.
 """
 
 from __future__ import annotations
@@ -14,7 +14,7 @@ from shortforge.pipeline.engine import PipelineError
 from shortforge.pipeline.handlers import HandlerRegistry, StepContext
 from shortforge.pipeline.steps import StepName
 from shortforge.runtime import Runtime
-from shortforge.services import production, render, youtube
+from shortforge.services import clips, music, production, render, voice, youtube
 from shortforge.services.ideas import generate_ideas, selected_idea
 from shortforge.services.scripts import current_script, write_script
 
@@ -68,16 +68,34 @@ def build_handlers(runtime: Runtime) -> HandlerRegistry:
             raise PipelineError(str(exc)) from exc
 
     def voice_step(ctx: StepContext) -> dict[str, Any]:
-        return {"skipped": True, "message": "Voix off pas encore disponible : la vidéo sera exportée sans voix."}
+        project = _project(ctx)
+        if project.source == "clip":
+            return {"skipped": True, "message": "Son d'origine de la vidéo importée."}
+        return voice.generate_voice(ctx.session, runtime, project)
+
+    def confirm_voice(ctx: StepContext) -> None:
+        try:
+            voice.confirm_voice(ctx.session, runtime, _project(ctx))
+        except production.ProductionError as exc:
+            raise PipelineError(str(exc)) from exc
 
     def subtitles_step(ctx: StepContext) -> dict[str, Any]:
-        return render.create_subtitles(ctx.session, runtime.data_dir, _project(ctx))
+        project = _project(ctx)
+        if project.source == "clip":
+            return clips.create_clip_subtitles(ctx.session, runtime.data_dir, project)
+        return render.create_subtitles(ctx.session, runtime.data_dir, project)
 
     def music_step(ctx: StepContext) -> dict[str, Any]:
-        return {"skipped": True, "message": "Pas de musique : la bibliothèque de musiques libres arrivera plus tard."}
+        project = _project(ctx)
+        if project.source == "clip":
+            return {"skipped": True, "message": "Son d'origine conservé, sans musique ajoutée."}
+        return music.select_music(ctx.session, project)
 
     def render_step(ctx: StepContext) -> dict[str, Any]:
-        return render.render_video(ctx.session, runtime.settings, _project(ctx))
+        project = _project(ctx)
+        if project.source == "clip":
+            return clips.render_clip(ctx.session, runtime.settings, project)
+        return render.render_video(ctx.session, runtime.settings, project)
 
     def check_preview(ctx: StepContext) -> None:
         if render.latest_render(ctx.session, ctx.project_id) is None:
@@ -98,7 +116,8 @@ def build_handlers(runtime: Runtime) -> HandlerRegistry:
         return youtube.create_draft(ctx.session, runtime.settings, _project(ctx))
 
     def publish_hook(ctx: StepContext) -> None:
-        youtube.publish(ctx.session, runtime.settings, _project(ctx), runtime.youtube, ctx.actor)
+        youtube.publish(ctx.session, runtime.settings, _project(ctx), runtime.youtube, ctx.actor,
+                        postiz=runtime.postiz())
 
     registry.register(StepName.GENERATE_IDEAS, ideas_step)
     registry.on_approve(StepName.SELECT_IDEA, select_idea_check)
@@ -109,6 +128,7 @@ def build_handlers(runtime: Runtime) -> HandlerRegistry:
     registry.register(StepName.GENERATE_VIDEOS, videos_step)
     registry.on_approve(StepName.GENERATE_VIDEOS, confirm_videos)
     registry.register(StepName.GENERATE_VOICE, voice_step)
+    registry.on_approve(StepName.GENERATE_VOICE, confirm_voice)
     registry.register(StepName.CREATE_SUBTITLES, subtitles_step)
     registry.register(StepName.SELECT_MUSIC, music_step)
     registry.register(StepName.RENDER_VIDEO, render_step)

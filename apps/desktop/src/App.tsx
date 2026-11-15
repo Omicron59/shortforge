@@ -11,6 +11,12 @@ import Queue from "./pages/Queue";
 import Settings from "./pages/Settings";
 import History from "./pages/History";
 import Stats from "./pages/Stats";
+import Planning from "./pages/Planning";
+import Inbox from "./pages/Inbox";
+import Formats from "./pages/Formats";
+import LongVideo from "./pages/LongVideo";
+import MyStyle from "./pages/MyStyle";
+import Onboarding from "./pages/Onboarding";
 
 export default function App() {
   return (
@@ -27,6 +33,12 @@ export default function App() {
           <Route path="/parametres" element={<Settings />} />
           <Route path="/historique" element={<History />} />
           <Route path="/statistiques" element={<Stats />} />
+          <Route path="/planning" element={<Planning />} />
+          <Route path="/a-valider" element={<Inbox />} />
+          <Route path="/formats" element={<Formats />} />
+          <Route path="/video-longue" element={<LongVideo />} />
+          <Route path="/style" element={<MyStyle />} />
+          <Route path="/bienvenue" element={<Onboarding />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </Layout>

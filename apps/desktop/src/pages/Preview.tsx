@@ -6,7 +6,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { api, assetUrl } from "../api/client";
 import { useAction } from "../api/hooks";
-import type { ProjectDetail, YoutubeDraft } from "../api/types";
+import type { ProjectDetail, SocialPostT, YoutubeDraft } from "../api/types";
 import { WithProject } from "../components/Layout";
 import { NextAction, currentStep, stepOf } from "../components/Pipeline";
 import { Alert, Badge, Button, Card, Empty, Field, PageHeader, StatusBadge, inputClass } from "../components/ui";
@@ -72,7 +72,9 @@ function PreviewBody({ project }: { project: ProjectDetail }) {
 
         <div className="space-y-4 lg:col-span-3">
           <Validation project={project} watched={watched} />
+          <Quality project={project} />
           <Draft project={project} />
+          <Platforms project={project} />
           <Publication project={project} />
         </div>
       </div>
@@ -263,5 +265,97 @@ function Publication({ project }: { project: ProjectDetail }) {
         )}
       </div>
     </Card>
+  );
+}
+
+/** Note du controle qualite image par image (FFmpeg). */
+function Quality({ project }: { project: ProjectDetail }) {
+  const out = stepOf(project, "render_video")?.output as { quality?: { score: number; issues: string[] } } | null;
+  const q = out?.quality;
+  if (!q) return null;
+  const tone = q.score >= 8 ? "green" : q.score >= 6 ? "yellow" : "red";
+  return (
+    <Card title="Contrôle vidéo" actions={<Badge tone={tone}>{q.score.toLocaleString("fr-FR")}/10</Badge>}>
+      {q.issues.length ? (
+        <ul className="list-inside list-disc text-sm text-zinc-300">{q.issues.map((i) => <li key={i}>{i}</li>)}</ul>
+      ) : (
+        <p className="text-sm text-emerald-300">Aucun défaut détecté : ni passage noir, ni image figée, ni silence, volume correct.</p>
+      )}
+      <p className="mt-2 text-xs text-zinc-500">Analyse image par image (passages noirs, images figées) et du son (silences, volume en LUFS).</p>
+    </Card>
+  );
+}
+
+const METHOD_LABELS = { youtube_api: "Envoi automatique (API YouTube)", postiz: "Envoi automatique (Postiz)", manual: "Tu publies toi-même" };
+const POST_STATUS: Record<string, string> = { draft: "à préparer", exported: "exporté", scheduled: "programmé", published: "publié", failed: "échec" };
+
+/** YouTube, TikTok et Instagram : texte, heure, et export manuel si pas d'envoi automatique. */
+function Platforms({ project }: { project: ProjectDetail }) {
+  const final = stepOf(project, "approve_final_render");
+  const posts = useQuery({ queryKey: ["posts", project.id], queryFn: () => api.posts(project.id), enabled: final?.status === "done" });
+  const finish = useAction(() => api.finishManual(project.id), "Short terminé (publication faite à la main).");
+  if (final?.status !== "done") return null;
+  const allManual = posts.data?.every((p) => !p.enabled || p.method === "manual");
+  return (
+    <Card title="Plateformes">
+      <div className="space-y-4">
+        {posts.data?.map((post) => <PostEditor key={post.id} projectId={project.id} post={post} />)}
+      </div>
+      {allManual && stepOf(project, "publish")?.status !== "done" && (
+        <div className="mt-4 border-t border-zinc-800 pt-4">
+          <p className="mb-2 text-sm text-zinc-400">Aucun envoi automatique : télécharge le MP4, copie les textes, publie toi-même, puis termine le Short.</p>
+          <Button onClick={() => finish.mutate(undefined)}>J'ai publié moi-même : terminer</Button>
+        </div>
+      )}
+    </Card>
+  );
+}
+
+function toLocalInput(iso: string | null): string {
+  if (!iso) return "";
+  const d = new Date(/[zZ+]/.test(iso.slice(10)) ? iso : `${iso}Z`);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function PostEditor({ projectId, post }: { projectId: string; post: SocialPostT }) {
+  const [caption, setCaption] = useState(post.caption);
+  const [url, setUrl] = useState("");
+  const patch = useAction((body: Parameters<typeof api.patchPost>[1]) => api.patchPost(post.id, body), `${post.label} : enregistré.`);
+  const exported = useAction(() => api.postExported(post.id));
+  const published = useAction(() => api.postPublished(post.id, url), `${post.label} : marqué comme publié.`);
+  const render = useQuery({ queryKey: ["render", projectId], queryFn: () => api.render(projectId) });
+  const locked = ["scheduled", "published"].includes(post.status);
+  useEffect(() => setCaption(post.caption), [post.caption]);
+
+  return (
+    <div className={`rounded-lg border p-3 ${post.enabled ? "border-zinc-800" : "border-zinc-900 opacity-60"}`}>
+      <div className="mb-2 flex flex-wrap items-center gap-2">
+        <label className="flex items-center gap-2 font-medium">
+          <input type="checkbox" checked={post.enabled} disabled={locked} onChange={(e) => patch.mutate({ enabled: e.target.checked })} /> {post.label}
+        </label>
+        <Badge tone={post.method === "manual" ? "zinc" : "blue"}>{METHOD_LABELS[post.method]}</Badge>
+        <Badge tone={post.status === "failed" ? "red" : post.status === "draft" ? "zinc" : "green"}>{POST_STATUS[post.status] ?? post.status}</Badge>
+      </div>
+      {post.platform !== "youtube" && (
+        <textarea className={inputClass} rows={3} disabled={locked} value={caption} onChange={(e) => setCaption(e.target.value)} onBlur={() => caption !== post.caption && patch.mutate({ caption })} />
+      )}
+      {post.platform === "youtube" && <p className="text-xs text-zinc-500">Texte : titre et description du brouillon YouTube ci-dessus.</p>}
+      <div className="mt-2 flex flex-wrap items-center gap-2 text-sm">
+        <span className="text-zinc-400">Publier le</span>
+        <input type="datetime-local" className={`${inputClass} w-56`} disabled={locked} defaultValue={toLocalInput(post.scheduled_at)}
+          onBlur={(e) => e.target.value ? patch.mutate({ scheduled_at: new Date(e.target.value).toISOString() }) : patch.mutate({ clear_schedule: true })} />
+        <span className="text-xs text-zinc-500">vide = dès la publication</span>
+      </div>
+      {post.error && <p className="mt-2 text-xs text-red-300">{post.error}</p>}
+      {post.method === "manual" && post.enabled && post.status !== "published" && (
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <Button className="text-xs" onClick={() => { void navigator.clipboard?.writeText(post.platform === "youtube" ? "" : caption); exported.mutate(undefined); }}>Copier le texte</Button>
+          {render.data?.asset_id && <a className="text-xs text-violet-300 underline" href={assetUrl(render.data.asset_id)} download={`short_${post.platform}.mp4`}>Télécharger le MP4</a>}
+          <input className={`${inputClass} w-64 text-xs`} value={url} onChange={(e) => setUrl(e.target.value)} placeholder="Lien de la publication (facultatif)" />
+          <Button className="text-xs" onClick={() => published.mutate(undefined)}>C'est publié</Button>
+        </div>
+      )}
+    </div>
   );
 }

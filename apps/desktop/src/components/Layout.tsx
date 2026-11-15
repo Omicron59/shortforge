@@ -1,6 +1,6 @@
 // Cadre de l'application : menu lateral, projet ouvert, etat du moteur local et messages.
-import type { ReactNode } from "react";
-import { NavLink, useNavigate } from "react-router-dom";
+import { useEffect, type ReactNode } from "react";
+import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../api/client";
 import { keys, useProject } from "../api/hooks";
@@ -11,15 +11,21 @@ import { Empty, Button, Loading, ErrorBox } from "./ui";
 
 const NAV = [
   { to: "/", label: "Tableau de bord", icon: "◧" },
+  { to: "/a-valider", label: "À valider", icon: "✓" },
+  { to: "/planning", label: "Planning de la semaine", icon: "▤" },
   { to: "/idees", label: "Niche et idées", icon: "✦" },
+  { to: "/formats", label: "Formats gagnants", icon: "★" },
+  { to: "/video-longue", label: "Vidéo longue → Shorts", icon: "✂" },
   { to: "/script", label: "Éditeur de script", icon: "✎" },
   { to: "/scenes", label: "Revue des scènes", icon: "▦" },
   { to: "/voix", label: "Voix et sous-titres", icon: "♪" },
-  { to: "/apercu", label: "Aperçu vidéo", icon: "▶" },
+  { to: "/apercu", label: "Aperçu et publication", icon: "▶" },
   { to: "/production", label: "File de production", icon: "≡" },
   { to: "/historique", label: "Historique", icon: "↺" },
-  { to: "/statistiques", label: "Statistiques", icon: "▲" },
+  { to: "/statistiques", label: "Résultats", icon: "▲" },
+  { to: "/style", label: "Mon style", icon: "✍" },
   { to: "/parametres", label: "Paramètres", icon: "⚙" },
+  { to: "/bienvenue", label: "Assistant", icon: "?" },
 ];
 
 export function Layout({ children }: { children: ReactNode }) {
@@ -27,6 +33,14 @@ export function Layout({ children }: { children: ReactNode }) {
   const projects = useQuery({ queryKey: keys.projects, queryFn: api.projects, enabled: health.isSuccess });
   const { currentId, setCurrent } = useProjectStore();
   const toasts = useToasts();
+  const onboarding = useQuery({ queryKey: ["onboarding"], queryFn: api.onboarding, enabled: health.isSuccess, staleTime: Infinity });
+  const navigate = useNavigate();
+  const location = useLocation();
+  const inbox = useQuery({ queryKey: ["validations"], queryFn: api.validations, enabled: health.isSuccess, refetchInterval: 8000 });
+
+  useEffect(() => {
+    if (onboarding.data && !onboarding.data.done && location.pathname === "/") navigate("/bienvenue");
+  }, [onboarding.data, location.pathname, navigate]);
 
   return (
     <div className="flex h-screen overflow-hidden">
@@ -56,7 +70,10 @@ export function Layout({ children }: { children: ReactNode }) {
                 `flex items-center gap-3 rounded-lg px-3 py-2 text-sm ${isActive ? "bg-violet-600/20 text-violet-200" : "text-zinc-400 hover:bg-zinc-900 hover:text-zinc-100"}`}
             >
               <span className="w-4 text-center">{item.icon}</span>
-              {item.label}
+              <span className="flex-1">{item.label}</span>
+              {item.to === "/a-valider" && !!inbox.data?.length && (
+                <span className="rounded-full bg-amber-500 px-1.5 text-xs font-semibold text-black">{inbox.data.length}</span>
+              )}
             </NavLink>
           ))}
         </nav>
@@ -102,7 +119,10 @@ function Offline() {
         <p className="mt-2 text-sm text-zinc-400">
           L'interface n'arrive pas à joindre le backend sur http://127.0.0.1:8787. Lance-le dans un terminal :
         </p>
-        <pre className="mt-3 rounded-lg bg-zinc-900 p-3 text-left text-sm">cd backend{"\n"}.venv\Scripts\python -m shortforge</pre>
+        <p className="mt-3 text-sm text-zinc-400">
+          Dans l'application installée, le moteur démarre tout seul (quelques secondes au premier lancement). En développement, lance-le à la main :
+        </p>
+        <pre className="mt-3 rounded-lg bg-zinc-900 p-3 text-left text-sm">cd backend{"\n"}python -m shortforge</pre>
         <p className="mt-3 text-xs text-zinc-500">Nouvel essai automatique toutes les 10 secondes.</p>
       </div>
     </div>

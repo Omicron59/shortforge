@@ -48,6 +48,8 @@ function ScriptBody({ project }: { project: ProjectDetail }) {
   const save = useAction((d: Draft) => api.updateScript(project.id, d), "Script enregistré.");
   const shorten = useAction(() => api.shortenScript(project.id, target), "Script raccourci (nouvelle version).");
   const regenerate = useAction(() => api.regenerateScript(project.id, instructions), "Nouvelle version générée.");
+  const [fix, setFix] = useState("");
+  const revise = useAction(() => api.reviseScript(project.id, fix), "Correction appliquée (nouvelle version).");
 
   if (write?.status !== "done") {
     return (
@@ -81,6 +83,18 @@ function ScriptBody({ project }: { project: ProjectDetail }) {
         <Alert tone="green">
           Script validé. <button type="button" className="underline" onClick={() => navigate("/scenes")}>Revoir les scènes →</button>
         </Alert>
+      )}
+
+      {!locked && (
+        <Card title="Corriger en une phrase">
+          <div className="flex flex-wrap gap-2">
+            <input className={`${inputClass} flex-1`} value={fix} onChange={(e) => setFix(e.target.value)}
+              placeholder="Ex. : rends le hook plus intrigant, enlève la deuxième scène, termine par une question" />
+            <Button variant="primary" disabled={fix.trim().length < 3 || dirty} busy={revise.isPending}
+              onClick={() => revise.mutate(undefined, { onSuccess: () => setFix("") })}>Corriger</Button>
+          </div>
+          {dirty && <p className="mt-2 text-xs text-zinc-500">Enregistre d'abord tes modifications manuelles.</p>}
+        </Card>
       )}
 
       <Card title="Texte">

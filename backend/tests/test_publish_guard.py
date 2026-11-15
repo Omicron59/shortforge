@@ -51,3 +51,10 @@ def test_reasons_are_in_french(tmp_path: Path) -> None:
                            confirmed=False, actor="")
     assert len(result.reasons) == 4
     assert "désactivée" in result.reasons[0]
+
+
+def test_env_example_loads_with_empty_values(tmp_path: Path) -> None:
+    env = Path(__file__).resolve().parents[2] / ".env.example"
+    settings = Settings(_env_file=env)  # type: ignore[call-arg]
+    assert settings.gemini_api_key is None and settings.elevenlabs_cost_per_1000_chars is None
+    assert settings.youtube_publish_enabled is False and settings.social_publish_enabled is False
