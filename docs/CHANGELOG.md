@@ -1,5 +1,11 @@
 # Journal des changements
 
+## 0.5.2 — 15/11/2026
+
+### Corrigé
+- Sans workflow vidéo ComfyUI, l'étape des vidéos échouait : la scène garde maintenant son image, animée par un zoom lent au montage.
+- Un modèle Ollama écrit sans son étiquette (« modele » au lieu de « modele:cloud ») est retrouvé automatiquement.
+
 ## 0.5.1 — 15/11/2026
 
 ### Corrigé

@@ -163,12 +163,17 @@ def generate_videos(session: Session, runtime: Runtime, project: Project) -> dic
 
     budget = BudgetService(session, runtime.settings)
     registry = runtime.providers(session)
-    spent, generated = 0.0, 0
+    spent, generated, animated = 0.0, 0, 0
     for scene in project_scenes(session, project.id):
         if scene.status == "done" and scene_asset(session, scene.id, "video"):
             continue
         provider = registry.get(scene.provider_id or FALLBACK)
         request = _request(session, scene)
+        if provider.kind == "local" and not provider.is_configured() and request.image_path:
+            # Pas de workflow video local : la scene garde son image, animee par un zoom lent au montage.
+            scene.status = "image_only"
+            animated += 1
+            continue
         operation = Operation.IMAGE if request.image_path and Operation.IMAGE in provider.operations else Operation.TEXT
         if operation is Operation.TEXT and Operation.TEXT not in provider.operations:
             raise ProductionError(f"{provider.name} a besoin d'une image de départ pour la scène {scene.position + 1}.")
@@ -211,7 +216,12 @@ def generate_videos(session: Session, runtime: Runtime, project: Project) -> dic
                 confirmation.provider_job_id = job.id  # confirmation utilisee
         session.flush()
         generated += 1
-    return {"videos_generated": generated, "spent_usd": round(spent, 4)}
+    result: dict[str, Any] = {"videos_generated": generated, "spent_usd": round(spent, 4)}
+    if animated:
+        result["animated_images"] = animated
+        result["message"] = (f"{animated} scène(s) sans workflow vidéo local : image animée au montage. "
+                             "Ajoute un workflow vidéo ComfyUI pour de vrais clips.")
+    return result
 
 
 def reset_scene(session: Session, scene: Scene, target: str) -> None:

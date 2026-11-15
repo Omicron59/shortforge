@@ -93,7 +93,7 @@ function SceneBoard({ project }: { project: ProjectDetail }) {
   );
 }
 
-const STATUS_LABELS: Record<string, string> = { pending: "à faire", running: "en cours", done: "prête", failed: "échec" };
+const STATUS_LABELS: Record<string, string> = { pending: "à faire", running: "en cours", done: "prête", failed: "échec", image_only: "image animée" };
 
 function SceneCard({ scene, providers, image, video }: { scene: Scene; providers: Provider[]; image?: Asset; video?: Asset }) {
   const [prompt, setPrompt] = useState(scene.visual_prompt);

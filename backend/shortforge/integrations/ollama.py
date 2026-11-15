@@ -75,6 +75,10 @@ class OllamaClient:
             except httpx.HTTPError as exc:
                 raise LLMError(self._unreachable()) from exc
             if res.status_code == 404:
+                resolved = self._resolve_model()
+                if resolved and resolved != self.model:  # « nom » ecrit sans son etiquette « :xxx »
+                    self.model = body["model"] = resolved
+                    continue
                 raise LLMError(f"Le modèle « {self.model} » n'est pas installé : lance `ollama pull {self.model}`.")
             if res.status_code >= 400:
                 raise LLMError(f"Ollama a renvoyé une erreur {res.status_code} : {res.text[:200]}")
@@ -84,6 +88,16 @@ class OllamaClient:
             except ValueError as exc:
                 last_error = str(exc)
         raise LLMError(f"Le modèle n'a pas renvoyé de JSON valide ({last_error}).")
+
+    def _resolve_model(self) -> str | None:
+        """Nom complet d'un modele installe a partir d'un nom sans etiquette (ex. « modele » → « modele:cloud »)."""
+        if ":" in self.model:
+            return None
+        try:
+            names = self.list_models()
+        except LLMError:
+            return None
+        return next((n for n in names if n.split(":", 1)[0] == self.model), None)
 
     def _unreachable(self) -> str:
         return f"Ollama ne répond pas à {self.base_url}. Lance Ollama puis réessaie."

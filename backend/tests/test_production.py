@@ -147,3 +147,21 @@ def test_missing_image_workflow_fails_with_clear_message(session: Session, tmp_p
     service.advance(project_id)
     step = service.advance(project_id)
     assert step.status == "failed" and "« absent » introuvable" in (step.error or "")
+
+
+def test_scenes_without_local_video_workflow_keep_their_image(session: Session, tmp_path: Path) -> None:
+    from shortforge.pipeline.default_handlers import build_handlers as handlers
+    from tests.fakes import FakeLLM as LLM
+    from tests.fakes import ideas_response as ideas
+    from tests.fakes import make_runtime as runtime_for
+    from tests.fakes import script_response
+
+    settings = Settings(_env_file=None, shortforge_data_dir=tmp_path)  # type: ignore[call-arg]
+    runtime = runtime_for(settings, LLM(ideas("Le chat qui danse"), script_response(("simple", "simple"))))
+    service = PipelineService(session, settings, handlers(runtime))  # pas de workflow video ajoute
+    project_id = service.create_project("Chat", niche="humour", video_mode="economique").id
+    run_to_videos(service, session, project_id)
+    videos = service.advance(project_id)
+    assert videos.status == "done", videos.error
+    assert videos.output["animated_images"] == 2 and "image animée" in videos.output["message"]  # type: ignore[index]
+    assert {s.status for s in scenes_of(session, current_script(session, project_id).id)} == {"image_only"}  # type: ignore[union-attr]

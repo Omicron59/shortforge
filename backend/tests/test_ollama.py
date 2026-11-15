@@ -63,3 +63,20 @@ def test_unreachable_server() -> None:
 def test_list_models() -> None:
     reply = httpx.Response(200, json={"models": [{"name": "qwen3:8b"}, {"name": "mistral"}]})
     assert client(httpx.MockTransport(lambda _: reply)).list_models() == ["qwen3:8b", "mistral"]
+
+
+def test_model_name_without_tag_is_resolved() -> None:
+    used = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/api/tags":
+            return httpx.Response(200, json={"models": [{"name": "autre:7b"}, {"name": "mon-modele:cloud"}]})
+        model = json.loads(request.content)["model"]
+        used.append(model)
+        if model == "mon-modele":
+            return httpx.Response(404, json={"error": "model not found"})
+        return chat_reply('{"ok": true}')
+
+    llm = client(httpx.MockTransport(handler))
+    assert llm.generate_json("s", "p") == {"ok": True}
+    assert used == ["mon-modele", "mon-modele:cloud"] and llm.model == "mon-modele:cloud"
