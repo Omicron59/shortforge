@@ -165,3 +165,13 @@ def test_scenes_without_local_video_workflow_keep_their_image(session: Session, 
     assert videos.status == "done", videos.error
     assert videos.output["animated_images"] == 2 and "image animée" in videos.output["message"]  # type: ignore[index]
     assert {s.status for s in scenes_of(session, current_script(session, project_id).id)} == {"image_only"}  # type: ignore[union-attr]
+
+
+def test_image_size_follows_the_checkpoint(tmp_path: Path) -> None:
+    from shortforge.services.production import image_size, quality_prompts
+
+    settings = Settings(_env_file=None, shortforge_data_dir=tmp_path)  # type: ignore[call-arg]
+    assert image_size(settings, "v1-5-pruned-emaonly-fp16.safetensors") == (512, 896)
+    assert image_size(settings, "sd_xl_base_1.0.safetensors") == (768, 1344)
+    prompt, negative = quality_prompts("a chef cooking pasta.", "flou")
+    assert prompt.startswith("a chef cooking pasta, vibrant natural colors") and "monochrome" in negative

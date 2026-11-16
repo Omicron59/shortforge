@@ -76,11 +76,37 @@ def create_storyboard(session: Session, runtime: Runtime, project: Project) -> d
 
 # ── Etape generate_images ──
 
+QUALITY_SUFFIX = "vibrant natural colors, cinematic lighting, highly detailed, sharp focus, vertical composition"
+QUALITY_NEGATIVE = "black and white, monochrome, grayscale, blurry, lowres, jpeg artifacts, watermark, text"
+SD15_MARKERS = ("v1-5", "v1.5", "sd15", "sd-1.5", "sd1.5", "1-5-pruned")
+
+
+def checkpoint_in_use(session: Session, workflow: dict[str, Any]) -> str:
+    """Modele d'image utilise : celui choisi dans Parametres, sinon celui du workflow."""
+    chosen = get_value(session, "comfyui_checkpoint")
+    if chosen:
+        return str(chosen)
+    return next((str(n.get("inputs", {}).get("ckpt_name", "")) for n in workflow.values()
+                 if isinstance(n, dict) and n.get("class_type") == "CheckpointLoaderSimple"), "")
+
+
+def image_size(settings: Any, checkpoint: str) -> tuple[int, int]:
+    """Taille native du modele : SD 1.5 est fait pour ~512 px (plus grand, il deforme et repete les sujets)."""
+    if any(m in checkpoint.lower() for m in SD15_MARKERS):
+        return 512, 896
+    return settings.image_width, settings.image_height
+
+
+def quality_prompts(prompt: str, negative: str) -> tuple[str, str]:
+    return f"{prompt.rstrip(' ,.')}, {QUALITY_SUFFIX}", ", ".join(p for p in (negative, QUALITY_NEGATIVE) if p)
+
 
 def generate_images(session: Session, runtime: Runtime, project: Project) -> dict[str, Any]:
     workflow_id = str(get_value(session, "comfyui_image_workflow", runtime.settings.comfyui_image_workflow))
     workflow, spec = runtime.library.load(workflow_id)
     out_dir = runtime.project_dir(project.id) / "images"
+    checkpoint = checkpoint_in_use(session, workflow)
+    width, height = image_size(runtime.settings, checkpoint)
     done = 0
     for scene in project_scenes(session, project.id):
         if scene.image_status == "done" and scene_asset(session, scene.id, "image"):
@@ -88,9 +114,9 @@ def generate_images(session: Session, runtime: Runtime, project: Project) -> dic
             continue
         if scene.seed is None:
             scene.seed = random.randint(0, 2**31 - 1)
+        prompt, negative = quality_prompts(scene.visual_prompt, scene.negative_prompt)
         filled = apply_inputs(workflow, spec, {
-            "prompt": scene.visual_prompt, "negative_prompt": scene.negative_prompt, "seed": scene.seed,
-            "width": runtime.settings.image_width, "height": runtime.settings.image_height,
+            "prompt": prompt, "negative_prompt": negative, "seed": scene.seed, "width": width, "height": height,
             "model": get_value(session, "comfyui_checkpoint") or None,  # modele choisi dans Parametres
         })
         scene.image_status = "running"
@@ -105,7 +131,7 @@ def generate_images(session: Session, runtime: Runtime, project: Project) -> dic
         scene.image_status = "done"
         session.flush()
         done += 1
-    return {"images": done, "workflow": workflow_id}
+    return {"images": done, "workflow": workflow_id, "checkpoint": checkpoint, "size": f"{width}x{height}"}
 
 
 # ── Etape generate_videos ──

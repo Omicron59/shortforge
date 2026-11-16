@@ -26,6 +26,9 @@ from shortforge.services.production import ProductionError, project_scenes, scen
 WIDTH, HEIGHT, FPS = 1080, 1920, 30
 MAX_SHORT_DURATION_S = 180  # limite YouTube Shorts
 FADE_S = 0.4
+ZOOM_OVERSAMPLE = 3  # agrandissement avant le zoom lent (fluidite)
+ZOOM_AMOUNT = 0.10  # zoom total sur la duree d'une scene (10 %)
+LOUDNESS = "loudnorm=I=-14:TP=-1.5:LRA=11,aresample=48000"  # volume des plateformes (-14 LUFS)
 DEFAULT_PRESET = "classique_jaune"
 LOGO_POSITIONS = {"haut_droite": "W-w-48:64", "haut_gauche": "48:64", "bas_droite": "W-w-48:H-h-140",
                   "bas_gauche": "48:H-h-140"}
@@ -126,13 +129,15 @@ class RenderPlan:
 
 def _clip_filter(index: int, clip: ClipInput) -> str:
     if clip.is_image:  # lent zoom avant (evite une image figee)
+        # Image agrandie 3x avant le zoom : les deplacements se font au tiers de pixel, sans tremblement.
         frames = max(1, round(clip.duration_s * FPS))
-        chain = [f"scale={WIDTH * 2}:{HEIGHT * 2}:force_original_aspect_ratio=increase",
-                 f"crop={WIDTH * 2}:{HEIGHT * 2}",
-                 f"zoompan=z='min(zoom+0.0009,1.15)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)'"
+        chain = [f"scale={WIDTH * ZOOM_OVERSAMPLE}:{HEIGHT * ZOOM_OVERSAMPLE}:force_original_aspect_ratio=increase"
+                 ":flags=lanczos",
+                 f"crop={WIDTH * ZOOM_OVERSAMPLE}:{HEIGHT * ZOOM_OVERSAMPLE}",
+                 f"zoompan=z='1+{ZOOM_AMOUNT}*on/{frames}':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)'"
                  f":d={frames}:s={WIDTH}x{HEIGHT}:fps={FPS}"]
     else:
-        chain = [f"scale={WIDTH}:{HEIGHT}:force_original_aspect_ratio=increase", f"crop={WIDTH}:{HEIGHT}"]
+        chain = [f"scale={WIDTH}:{HEIGHT}:force_original_aspect_ratio=increase:flags=lanczos", f"crop={WIDTH}:{HEIGHT}"]
     chain += ["setsar=1", f"fps={FPS}", "format=yuv420p",
               f"tpad=stop_mode=clone:stop_duration={clip.duration_s:g}",
               f"trim=duration={clip.duration_s:g}", "setpts=PTS-STARTPTS"]
@@ -198,9 +203,9 @@ def build_command(ffmpeg: str, plan: RenderPlan) -> list[str]:
         audio.append(f"[{silent_in}:a]")
     if len(audio) > 1:
         parts.append("".join(audio) + f"amix=inputs={len(audio)}:duration=first:normalize=0,"
-                     "aformat=sample_rates=48000:channel_layouts=stereo[aout]")
+                     f"{LOUDNESS},aformat=sample_rates=48000:channel_layouts=stereo[aout]")
     else:
-        parts.append(f"{audio[0]}aformat=sample_rates=48000:channel_layouts=stereo[aout]")
+        parts.append(f"{audio[0]}{LOUDNESS},aformat=sample_rates=48000:channel_layouts=stereo[aout]")
     cmd += ["-filter_complex", ";".join(parts), "-map", "[vout]", "-map", "[aout]",
             "-c:v", "libx264", "-preset", "medium", "-crf", "20", "-profile:v", "high", "-pix_fmt", "yuv420p",
             "-r", str(FPS), "-c:a", "aac", "-b:a", "192k", "-ar", "48000",

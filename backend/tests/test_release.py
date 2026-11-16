@@ -159,7 +159,8 @@ def test_ffmpeg_command_targets_vertical_h264(tmp_path: Path) -> None:
                              output=tmp_path / "out.mp4", subtitles=tmp_path / "s.ass")
     cmd = render.build_command("ffmpeg", plan)
     graph = cmd[cmd.index("-filter_complex") + 1]
-    assert "scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920" in graph
+    assert "scale=1080:1920:force_original_aspect_ratio=increase:flags=lanczos,crop=1080:1920" in graph
+    assert "loudnorm=I=-14" in graph and "zoompan=z=" in graph
     assert "fade=t=in:st=0:d=0.4" in graph and "concat=n=2" in graph and "ass=s.ass" in graph
     assert "anullsrc=r=48000:cl=stereo" in cmd  # piste muette sans voix
     assert cmd[cmd.index("-c:v") + 1] == "libx264" and cmd[cmd.index("-t", cmd.index("-map")) + 1] == "5.5"

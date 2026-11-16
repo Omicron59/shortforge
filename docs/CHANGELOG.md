@@ -1,5 +1,13 @@
 # Journal des changements
 
+## 0.5.3 — 16/11/2026
+
+### Amélioré (rendu plus propre)
+- Volume réglé automatiquement à -14 LUFS (niveau de TikTok, YouTube et Instagram).
+- Zoom lent sur les images : agrandissement 3x en lanczos avant le zoom, mouvement régulier sans tremblement.
+- Taille des images adaptée au modèle : 512x896 pour SD 1.5 (évite les sujets déformés ou répétés), 768x1344 pour SDXL.
+- Consignes de qualité ajoutées aux prompts d'image (couleurs, éclairage, netteté) et au prompt négatif (noir et blanc, flou, filigrane).
+
 ## 0.5.2 — 15/11/2026
 
 ### Corrigé
