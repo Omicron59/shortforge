@@ -35,3 +35,4 @@ apps/desktop/src-tauri/gen/
 backend/build/
 backend/dist/
 apps/desktop/src-tauri/backend-dist/
+CLAUDE.local.md
