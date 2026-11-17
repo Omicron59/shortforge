@@ -36,12 +36,15 @@ Durée visée : {duration} secondes au total.
 {extra}
 Format JSON exact :
 {{"hook": "...", "body": "...", "conclusion": "...", "call_to_action": "...",
-"scenes": [{{"text": "texte dit pendant la scène", "visual_prompt": "...", "negative_prompt": "...",
+"scenes": [{{"text": "texte dit pendant la scène", "on_screen_text": "quelques mots affichés à l'écran, ou vide",
+"visual_intent": "en une phrase, ce que l'image doit montrer", "visual_prompt": "...", "negative_prompt": "...",
 "transition": "{transitions}", "duration_s": 3, "importance": "{importances}"}}]}}"""
 
 
 class SceneDraft(BaseModel):
     text: str = ""
+    on_screen_text: str = Field(default="", max_length=200)
+    visual_intent: str = Field(default="", max_length=500)
     visual_prompt: str = Field(min_length=3)
     negative_prompt: str = ""
     transition: str = "cut"
@@ -138,7 +141,8 @@ def revise_script(session: Session, llm: LLMClient, project: Project, script: Sc
     scenes = scenes_of(session, script.id)
     current = {"hook": script.hook, "body": script.body, "conclusion": script.conclusion,
                "call_to_action": script.call_to_action,
-               "scenes": [{"text": s.text, "visual_prompt": s.visual_prompt, "negative_prompt": s.negative_prompt,
+               "scenes": [{"text": s.text, "on_screen_text": s.on_screen_text, "visual_intent": s.visual_intent,
+                           "visual_prompt": s.visual_prompt, "negative_prompt": s.negative_prompt,
                            "transition": s.transition, "duration_s": s.duration_s, "importance": s.importance}
                           for s in scenes]}
     prompt = (f"Voici le script actuel (JSON) :\n{json.dumps(current, ensure_ascii=False)}\n\n"
@@ -221,6 +225,7 @@ def _save(session: Session, project: Project, draft: ScriptDraft, *, idea_id: st
 def _add_scenes(session: Session, script: Script, drafts: list[SceneDraft]) -> list[Scene]:
     scenes = [
         Scene(project_id=script.project_id, script_id=script.id, position=i, text=d.text,
+              on_screen_text=d.on_screen_text, visual_intent=d.visual_intent,
               visual_prompt=d.visual_prompt, negative_prompt=d.negative_prompt or DEFAULT_NEGATIVE,
               transition=d.transition, duration_s=d.duration_s, importance=d.importance)
         for i, d in enumerate(drafts)

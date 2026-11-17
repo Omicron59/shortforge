@@ -14,12 +14,14 @@ from typing import TYPE_CHECKING, Any
 import httpx
 from sqlalchemy.orm import Session
 
+from shortforge.ai.router import TaskRouter
 from shortforge.config import Settings
 from shortforge.integrations.comfyui import DEFAULT_COMFYUI_URLS, ComfyUIClient, WorkflowLibrary
-from shortforge.integrations.ollama import LLMClient, OllamaClient
+from shortforge.integrations.ollama import LLMClient
 from shortforge.integrations.trends import GoogleTrendsSource, ManualTrendSource, TrendSource, YouTubeTrendSource
 from shortforge.providers.registry import ProviderRegistry, build_registry
 from shortforge.services.app_settings import get_value
+from shortforge.vault import Vault, default_keystore
 
 if TYPE_CHECKING:
     from shortforge.services.youtube import YouTubeClient
@@ -38,7 +40,14 @@ class Runtime:
     http_transport: httpx.BaseTransport | None = None  # ElevenLabs, Postiz, API YouTube publique (tests)
     transcriber: Any = None  # faster-whisper par defaut ; un faux dans les tests
     tts_override: Any = None  # moteur de voix impose (tests)
+    vault: Vault = field(default_factory=lambda: Vault(None))  # coffre a secrets (indisponible par defaut)
     _youtube: Any = None
+
+    def llm_for(self, task: str) -> LLMClient:
+        """Modele de texte regle pour une tache (idees, script, analyse)."""
+        for_task = getattr(self.llm, "for_task", None)
+        client: LLMClient = for_task(task) if for_task else self.llm
+        return client
 
     def postiz(self) -> Any:
         from shortforge.integrations.postiz import PostizClient
@@ -65,7 +74,7 @@ class Runtime:
         if self._youtube is None:
             from shortforge.services.youtube import YouTubeClient
 
-            self._youtube = YouTubeClient(self.settings, transport=self.youtube_transport)
+            self._youtube = YouTubeClient(self.settings, transport=self.youtube_transport, vault=self.vault)
         client: YouTubeClient = self._youtube
         return client
 
@@ -93,8 +102,8 @@ def build_runtime(settings: Settings) -> Runtime:
                           candidates=list(DEFAULT_COMFYUI_URLS))
     library = WorkflowLibrary(settings.workflow_dirs[:1] + settings.workflow_dirs[2:],
                               settings.shortforge_data_dir / "workflows")
-    llm = OllamaClient(settings.ollama_url, settings.ollama_model, timeout_s=settings.ollama_timeout_s,
-                       temperature=settings.ollama_temperature)
-    return Runtime(settings=settings, llm=llm, comfy=comfy, library=library,
+    vault = Vault(default_keystore())
+    llm = TaskRouter(settings, vault)
+    return Runtime(settings=settings, llm=llm, comfy=comfy, library=library, vault=vault,
                    trend_sources=default_trend_sources(settings),
                    providers=lambda session: build_registry(session, settings, comfy, library))

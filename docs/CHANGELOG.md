@@ -1,5 +1,36 @@
 # Journal des changements
 
+## 0.7.0 — 17/11/2026 (non publiée)
+
+### Ajouté
+- Nouveau parcours de création en 4 étapes (menu « Nouveau Short ») : Brief, Idées, Script et storyboard, Studio. L'ancien parcours reste disponible et les deux partagent les mêmes projets.
+- Brief court avec valeurs par défaut ; réglages secondaires repliés ; brouillon gardé avant même la création du projet.
+- 5 idées à partir du brief (résumé, difficulté, ressources, raison), variantes, modification, « garder pour plus tard ». Les nouvelles idées s'ajoutent aux précédentes. Aucun score de viralité.
+- Script et storyboard par scène : voix off, texte à l'écran, intention visuelle, prompt visuel, transition. Ajout, suppression, réordonnancement, régénération d'un seul champ, raccourcir, changer le ton, autres accroches, écriture sans modèle.
+- Enregistrement automatique avec état visible, reprise à l'étape en cours, historique et restauration des versions du script, duplication d'un projet.
+- Studio : scènes, aperçu 9:16 (storyboard distinct de la vidéo rendue), propriétés par onglet, import d'une image par scène, état réel de la production.
+- Signalement des images, de la voix, des sous-titres et du rendu produits avant une modification (rien n'est relancé tout seul).
+- Annulation d'une génération : son résultat n'est pas enregistré.
+- Tâches IA « Storyboard » et « Variantes » dans Réglages > Intelligence artificielle ; le modèle utilisé est affiché discrètement.
+
+### Limites connues
+- Le texte à l'écran est visible dans l'aperçu du storyboard, pas encore incrusté dans la vidéo rendue.
+- Voix par scène et musique générée : non intégrées.
+
+## 0.6.0 — 16/11/2026 (non publiée)
+
+### Ajouté
+- Réglages > Intelligence artificielle : Ollama sur ton PC, Ollama Cloud et OpenRouter, test de connexion réel, liste des modèles fournie par le fournisseur, recherche et filtres, modèle différent par tâche (idées, script, analyse), modèle de secours, paramètres avancés, journal des appels.
+- Coffre à secrets : les clés API sont chiffrées sur le disque ; la clé de chiffrement est gardée par le trousseau du système (Gestionnaire d'identification Windows, Trousseau macOS). Le jeton YouTube existant est chiffré sur place à sa première utilisation.
+- Migrations de la base (Alembic) : la base est copiée dans `sauvegardes/` et la copie vérifiée avant toute mise à niveau.
+- L'API locale exige un jeton de session créé par l'application à chaque lancement.
+- Premiers composants du nouveau design (palette sombre, `components/ds.tsx`) ; menu repliable en fenêtre étroite.
+
+### Garanties
+- Sans réglage, le texte passe par Ollama et le modèle du fichier de réglages, comme avant.
+- Un modèle payant n'est jamais choisi ni utilisé en secours sans accord explicite.
+- Le fichier de réglages et ses clés existantes ne sont ni modifiés ni supprimés.
+
 ## 0.5.3 — 16/11/2026
 
 ### Amélioré (rendu plus propre)

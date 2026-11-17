@@ -87,7 +87,8 @@ def shorten(project_id: str, payload: ShortenPayload, request: Request, session:
     script = script_service.current_script(session, project_id)
     if script is None:
         raise PipelineError("Aucun script à raccourcir.")
-    return _detail(script_service.shorten_script(session, runtime.llm, project, script, payload.target_duration_s))
+    llm = runtime.llm_for("script")
+    return _detail(script_service.shorten_script(session, llm, project, script, payload.target_duration_s))
 
 
 @router.post("/script/regenerate", response_model=ScriptDetail)
@@ -97,7 +98,8 @@ def regenerate(project_id: str, payload: RegeneratePayload, request: Request,
     idea = idea_service.selected_idea(session, project_id)
     if idea is None:
         raise PipelineError("Choisis d'abord une idée.")
-    return _detail(script_service.write_script(session, runtime.llm, project, idea, instructions=payload.instructions))
+    llm = runtime.llm_for("script")
+    return _detail(script_service.write_script(session, llm, project, idea, instructions=payload.instructions))
 
 
 class RevisePayload(BaseModel):
@@ -112,4 +114,5 @@ def revise(project_id: str, payload: RevisePayload, request: Request, session: S
     script = script_service.current_script(session, project_id)
     if script is None:
         raise PipelineError("Aucun script à corriger.")
-    return _detail(script_service.revise_script(session, runtime.llm, project, script, payload.instruction))
+    llm = runtime.llm_for("script")
+    return _detail(script_service.revise_script(session, llm, project, script, payload.instruction))

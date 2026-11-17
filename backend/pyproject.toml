@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "shortforge"
-version = "0.5.3"
+version = "0.7.0"
 description = "Backend local de ShortForge : creation de YouTube Shorts avec IA."
 readme = "README.md"
 license = "MIT"
@@ -17,6 +17,9 @@ dependencies = [
   "pydantic-settings>=2.3",
   "httpx>=0.27",
   "websockets>=12",
+  "alembic>=1.13",
+  "cryptography>=42",
+  "keyring>=25",
 ]
 
 [project.optional-dependencies]

@@ -47,6 +47,8 @@ class Project(TimestampMixin, Base):
     source: Mapped[str] = mapped_column(String(10), default="generated")
     planned_for: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)  # planning de la semaine
     clip: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)  # {source_id, start, end} pour un extrait
+    # Derniere modification du texte ou de l'ordre des scenes : sert a signaler voix, sous-titres et rendu obsoletes.
+    content_changed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     steps: Mapped[list[PipelineStep]] = relationship(
         back_populates="project", cascade="all, delete-orphan", order_by="PipelineStep.position"
@@ -89,6 +91,14 @@ class Idea(Base):
     sources: Mapped[list[str]] = mapped_column(JSON, default=list)  # tendances d'inspiration
     selected: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    # Nouveau parcours de creation (0.7.0)
+    summary: Mapped[str] = mapped_column(Text, default="", server_default="")
+    difficulty: Mapped[str] = mapped_column(String(20), default="", server_default="")  # facile|moyenne|difficile
+    resources: Mapped[list[str]] = mapped_column(JSON, default=list, server_default="[]")
+    fit_reason: Mapped[str] = mapped_column(Text, default="", server_default="")
+    saved: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")  # gardee pour plus tard
+    batch: Mapped[int] = mapped_column(Integer, default=0, server_default="0")  # numero de la generation
+    parent_id: Mapped[str | None] = mapped_column(String(32), nullable=True)  # idee dont celle-ci est une variante
 
 
 class Script(TimestampMixin, Base):
@@ -126,6 +136,10 @@ class Scene(TimestampMixin, Base):
     seed: Mapped[int | None] = mapped_column(Integer, nullable=True)
     image_status: Mapped[str] = mapped_column(String(20), default="pending")
     status: Mapped[str] = mapped_column(String(20), default="pending")  # statut de la video
+    on_screen_text: Mapped[str] = mapped_column(Text, default="", server_default="")  # texte affiche a l'ecran
+    visual_intent: Mapped[str] = mapped_column(Text, default="", server_default="")  # ce que l'image doit montrer
+    # Prompt visuel modifie : l'image deja produite est signalee comme obsolete.
+    visual_changed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
 
 class Asset(Base):
@@ -382,3 +396,87 @@ class SocialPost(TimestampMixin, Base):
     status: Mapped[str] = mapped_column(String(20), default="draft")  # draft|scheduled|published|exported|failed
     external_id: Mapped[str | None] = mapped_column(String(200), nullable=True)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class Secret(Base):
+    """Secret chiffre du coffre (cle API, jeton). La valeur en clair n'est jamais stockee."""
+
+    __tablename__ = "secrets"
+
+    name: Mapped[str] = mapped_column(String(100), primary_key=True)
+    ciphertext: Mapped[str] = mapped_column(Text)
+    hint: Mapped[str] = mapped_column(String(12), default="")  # derniers caracteres, pour l'affichage
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
+
+
+class AiProviderConfig(Base):
+    """Reglage d'un fournisseur d'IA : adresse choisie et resultat du dernier test de connexion."""
+
+    __tablename__ = "ai_providers"
+
+    id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    base_url: Mapped[str] = mapped_column(String(300), default="")
+    last_test_ok: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    last_test_message: Mapped[str] = mapped_column(String(300), default="")
+    last_test_key_checked: Mapped[bool] = mapped_column(Boolean, default=False)  # cle reellement verifiee ?
+    last_test_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
+
+
+class TaskModel(Base):
+    """Modele choisi pour une tache (idees, script, analyse), son modele de secours et ses parametres."""
+
+    __tablename__ = "task_models"
+
+    task: Mapped[str] = mapped_column(String(40), primary_key=True)
+    provider_id: Mapped[str] = mapped_column(String(40))
+    model: Mapped[str] = mapped_column(String(200))
+    fallback_provider_id: Mapped[str] = mapped_column(String(40), default="")
+    fallback_model: Mapped[str] = mapped_column(String(200), default="")
+    allow_paid_fallback: Mapped[bool] = mapped_column(Boolean, default=False)
+    temperature: Mapped[float | None] = mapped_column(Float, nullable=True)
+    max_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    strict_json: Mapped[bool] = mapped_column(Boolean, default=True)
+    timeout_s: Mapped[float | None] = mapped_column(Float, nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
+
+
+class AiCall(Base):
+    """Journal des appels aux modeles de texte. Ni prompt, ni reponse, ni secret."""
+
+    __tablename__ = "ai_calls"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True)
+    task: Mapped[str] = mapped_column(String(40))
+    provider_id: Mapped[str] = mapped_column(String(40))
+    model: Mapped[str] = mapped_column(String(200))
+    mode: Mapped[str] = mapped_column(String(10))
+    ok: Mapped[bool] = mapped_column(Boolean)
+    used_fallback: Mapped[bool] = mapped_column(Boolean, default=False)
+    error_kind: Mapped[str] = mapped_column(String(30), default="")
+    error: Mapped[str] = mapped_column(String(300), default="")
+    duration_ms: Mapped[int] = mapped_column(Integer, default=0)
+    input_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    output_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    cost_usd: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+
+class Brief(Base):
+    """Intention de depart d'un Short dans le nouveau parcours (une par projet)."""
+
+    __tablename__ = "briefs"
+
+    project_id: Mapped[str] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), primary_key=True)
+    subject: Mapped[str] = mapped_column(Text, default="")
+    niche: Mapped[str] = mapped_column(String(200), default="")
+    audience: Mapped[str] = mapped_column(String(300), default="")
+    goal: Mapped[str] = mapped_column(String(30), default="vues")
+    language: Mapped[str] = mapped_column(String(10), default="fr")
+    tone: Mapped[str] = mapped_column(String(30), default="educatif")
+    duration_s: Mapped[int] = mapped_column(Integer, default=30)
+    platform: Mapped[str] = mapped_column(String(30), default="youtube_shorts")
+    visual_style: Mapped[str] = mapped_column(String(300), default="")
+    constraints: Mapped[str] = mapped_column(Text, default="")
+    avoid: Mapped[str] = mapped_column(Text, default="")
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)

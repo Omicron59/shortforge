@@ -26,6 +26,8 @@ class Settings(BaseSettings):
     shortforge_host: str = "127.0.0.1"
     shortforge_port: int = 8787
     shortforge_language: str = "fr"
+    # Jeton de session exige par l'API locale (fourni par l'application de bureau a chaque lancement).
+    shortforge_api_token: SecretStr | None = None
 
     comfyui_url: str = "http://127.0.0.1:8000"
     comfyui_timeout_s: float = 1800

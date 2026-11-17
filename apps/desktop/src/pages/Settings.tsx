@@ -2,7 +2,7 @@
 // Les cles API ne se saisissent jamais ici : elles restent dans le fichier .env local.
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { API_URL, api } from "../api/client";
+import { api, fileUrl } from "../api/client";
 import { useAction } from "../api/hooks";
 import type { Budget, Importance, Provider } from "../api/types";
 import { Alert, Badge, Button, Card, Field, Loading, PageHeader, inputClass } from "../components/ui";
@@ -295,7 +295,7 @@ function BrandSettings() {
         </Field>
       </div>
       <div className="mt-4 flex flex-wrap items-center gap-3">
-        {b.has_logo && <img src={`${API_URL}/api/brand/logo?t=${Date.now()}`} alt="Logo" className="h-12 rounded bg-zinc-800 p-1" />}
+        {b.has_logo && <img src={fileUrl("/api/brand/logo", { t: Date.now() })} alt="Logo" className="h-12 rounded bg-zinc-800 p-1" />}
         <input type="file" accept="image/png,image/jpeg,image/webp" className="text-sm text-zinc-400"
           onChange={(e) => { const f = e.target.files?.[0]; if (f) logo.mutate(f); }} />
         {b.has_logo && <Button variant="ghost" className="text-xs" onClick={() => save.mutate({ remove_logo: true })}>Retirer le logo</Button>}

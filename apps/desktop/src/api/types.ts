@@ -334,3 +334,80 @@ export interface ComfyCheck {
   running: boolean; url: string; switched: boolean; checkpoints: string[]; expected_checkpoint: string;
   chosen_checkpoint: string; ready: boolean; message: string;
 }
+
+// --- Intelligence artificielle ---
+export interface AiProviderInfo {
+  id: string;
+  label: string;
+  type: string;
+  mode: "local" | "cloud";
+  billing: "free" | "subscription" | "usage";
+  needs_key: boolean;
+  key_set: boolean;
+  key_hint: string;
+  key_help: string;
+  base_url: string;
+  default_base_url: string;
+  base_url_editable: boolean;
+  last_test: { ok: boolean; message: string; key_checked: boolean; at: string | null } | null;
+}
+/** Modele tel que le fournisseur le declare ; `null` = information non fournie. */
+export interface AiModel {
+  id: string;
+  label: string;
+  provider_id: string;
+  mode: "local" | "cloud";
+  paid: boolean | null;
+  context_length: number | null;
+  size_bytes: number | null;
+  price_in_per_mtok: number | null;
+  price_out_per_mtok: number | null;
+  description: string;
+}
+export interface AiTask {
+  task: string;
+  label: string;
+  is_default: boolean;
+  provider_id: string;
+  provider_label: string;
+  model: string;
+  fallback_provider_id: string;
+  fallback_model: string;
+  allow_paid_fallback: boolean;
+  temperature: number | null;
+  max_tokens: number | null;
+  strict_json: boolean;
+  timeout_s: number | null;
+}
+export type AiTaskInput = Pick<AiTask, "provider_id" | "model"> &
+  Partial<Omit<AiTask, "task" | "label" | "is_default" | "provider_label">> & { confirm_paid?: boolean; apply_to_all?: boolean };
+export interface AiTestResult {
+  ok: boolean;
+  message: string;
+  kind: string;
+  key_checked: boolean;
+  models_count: number | null;
+}
+export interface AiCall {
+  id: string;
+  at: string;
+  task: string;
+  provider_id: string;
+  model: string;
+  mode: string;
+  ok: boolean;
+  used_fallback: boolean;
+  error_kind: string;
+  error: string;
+  duration_ms: number;
+  input_tokens: number | null;
+  output_tokens: number | null;
+  cost_usd: number | null;
+}
+export interface SecurityStatus {
+  vault_available: boolean;
+  vault_protection: string;
+  vault_message: string;
+  api_token_required: boolean;
+  youtube_token_encrypted: boolean | null;
+}

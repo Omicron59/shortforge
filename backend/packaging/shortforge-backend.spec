@@ -7,9 +7,12 @@ from pathlib import Path
 from PyInstaller.utils.hooks import collect_all, collect_submodules
 
 ROOT = Path(SPECPATH).parents[1]
-datas = [(str(ROOT / "assets" / "workflows"), "assets/workflows"), (str(ROOT / ".env.example"), ".")]
+datas = [(str(ROOT / "assets" / "workflows"), "assets/workflows"), (str(ROOT / ".env.example"), "."),
+         # Alembic lit les scripts de migration sur le disque (pas dans l'archive Python).
+         (str(ROOT / "backend" / "shortforge" / "migrations"), "shortforge/migrations")]
 binaries = []
-hiddenimports = collect_submodules("uvicorn") + collect_submodules("shortforge")
+hiddenimports = (collect_submodules("uvicorn") + collect_submodules("shortforge") + collect_submodules("alembic")
+                 + collect_submodules("keyring.backends"))  # trousseau Windows, macOS et Linux
 for package in ("faster_whisper", "ctranslate2", "onnxruntime", "av", "tokenizers"):
     try:
         d, b, h = collect_all(package)

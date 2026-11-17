@@ -1,5 +1,5 @@
 // Cadre de l'application : menu lateral, projet ouvert, etat du moteur local et messages.
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../api/client";
@@ -10,6 +10,7 @@ import type { ProjectDetail } from "../api/types";
 import { Empty, Button, Loading, ErrorBox } from "./ui";
 
 const NAV = [
+  { to: "/creer", label: "Nouveau Short", icon: "＋" },
   { to: "/", label: "Tableau de bord", icon: "◧" },
   { to: "/a-valider", label: "À valider", icon: "✓" },
   { to: "/planning", label: "Planning de la semaine", icon: "▤" },
@@ -25,6 +26,7 @@ const NAV = [
   { to: "/statistiques", label: "Résultats", icon: "▲" },
   { to: "/style", label: "Mon style", icon: "✍" },
   { to: "/parametres", label: "Paramètres", icon: "⚙" },
+  { to: "/parametres/ia", label: "Intelligence artificielle", icon: "✧" },
   { to: "/bienvenue", label: "Assistant", icon: "?" },
 ];
 
@@ -36,6 +38,8 @@ export function Layout({ children }: { children: ReactNode }) {
   const onboarding = useQuery({ queryKey: ["onboarding"], queryFn: api.onboarding, enabled: health.isSuccess, staleTime: Infinity });
   const navigate = useNavigate();
   const location = useLocation();
+  const [menuOpen, setMenuOpen] = useState(false);
+  useEffect(() => setMenuOpen(false), [location.pathname]);
   const inbox = useQuery({ queryKey: ["validations"], queryFn: api.validations, enabled: health.isSuccess, refetchInterval: 8000 });
 
   useEffect(() => {
@@ -43,8 +47,16 @@ export function Layout({ children }: { children: ReactNode }) {
   }, [onboarding.data, location.pathname, navigate]);
 
   return (
-    <div className="flex h-screen overflow-hidden">
-      <aside className="flex w-60 shrink-0 flex-col border-r border-zinc-800 bg-zinc-950">
+    <div className="flex h-screen flex-col overflow-hidden md:flex-row">
+      {/* Fenetre etroite : le menu se replie derriere un bouton. */}
+      <div className="flex items-center justify-between border-b border-zinc-800 bg-zinc-950 px-4 py-2 md:hidden">
+        <p className="font-bold tracking-tight">ShortForge</p>
+        <button type="button" aria-expanded={menuOpen} aria-controls="menu-principal" onClick={() => setMenuOpen((v) => !v)}
+          className="rounded-lg border border-zinc-800 px-3 py-2 text-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-500">
+          {menuOpen ? "Fermer" : "Menu"}
+        </button>
+      </div>
+      <aside id="menu-principal" className={`${menuOpen ? "flex" : "hidden"} min-h-0 w-full flex-1 flex-col border-r border-zinc-800 bg-zinc-950 md:flex md:w-60 md:flex-none md:shrink-0`}>
         <div className="px-5 py-5">
           <p className="text-lg font-bold tracking-tight">ShortForge</p>
           <p className="text-xs text-zinc-500">YouTube Shorts avec IA, en local</p>
@@ -65,7 +77,7 @@ export function Layout({ children }: { children: ReactNode }) {
             <NavLink
               key={item.to}
               to={item.to}
-              end={item.to === "/"}
+              end={item.to !== "/creer"}
               className={({ isActive }) =>
                 `flex items-center gap-3 rounded-lg px-3 py-2 text-sm ${isActive ? "bg-violet-600/20 text-violet-200" : "text-zinc-400 hover:bg-zinc-900 hover:text-zinc-100"}`}
             >
@@ -91,8 +103,9 @@ export function Layout({ children }: { children: ReactNode }) {
         </div>
       </aside>
 
-      <main className="flex-1 overflow-y-auto">
-        {health.isError ? <Offline /> : <div className="mx-auto max-w-6xl p-8">{children}</div>}
+      {/* Les ecrans refondus utilisent le fond du nouveau design. */}
+      <main className={`${menuOpen ? "hidden md:block" : ""} min-h-0 flex-1 overflow-y-auto ${/^\/(parametres\/ia|creer)/.test(location.pathname) ? "bg-sf-bg" : ""}`}>
+        {health.isError ? <Offline /> : <div className="mx-auto max-w-6xl p-4 md:p-8">{children}</div>}
       </main>
 
       <div className="fixed bottom-4 right-4 z-50 flex w-96 flex-col gap-2">

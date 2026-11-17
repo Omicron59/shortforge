@@ -88,3 +88,10 @@ def media(tmp_path_factory: pytest.TempPathFactory) -> dict[str, bytes]:
     return {"png": png.read_bytes(), "mp4": mp4.read_bytes()}
 
 
+
+
+@pytest.fixture(autouse=True)
+def _no_system_keyring(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Les tests ne touchent jamais au trousseau de la machine : coffre indisponible sauf demande explicite."""
+    monkeypatch.delenv("SHORTFORGE_SECRET_KEY", raising=False)
+    monkeypatch.setattr("shortforge.runtime.default_keystore", lambda: None)

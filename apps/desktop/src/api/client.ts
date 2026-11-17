@@ -43,14 +43,46 @@ import type {
   SocialPostT,
   Onboarding,
   ComfyCheck,
+  AiProviderInfo,
+  AiModel,
+  AiTask,
+  AiTaskInput,
+  AiTestResult,
+  AiCall,
+  SecurityStatus,
 } from "./types";
 
 export const API_URL: string = import.meta.env.VITE_API_URL ?? "http://127.0.0.1:8787";
 
 export class ApiError extends Error {
-  constructor(message: string, readonly status: number) {
+  /** `kind` : raison donnee par le moteur (invalid_key, quota, needs_paid_confirmation...). */
+  constructor(message: string, readonly status: number, readonly kind = "") {
     super(message);
   }
+}
+
+// Jeton de session de l'API locale, donne par l'application de bureau au lancement (vide en developpement).
+let apiToken = "";
+
+/** A appeler une fois avant d'afficher l'interface. */
+export async function initApiToken(): Promise<void> {
+  if (!("__TAURI_INTERNALS__" in window)) return;
+  try {
+    const { invoke } = await import("@tauri-apps/api/core");
+    apiToken = await invoke<string>("api_token");
+  } catch {
+    apiToken = "";
+  }
+}
+
+const authHeaders = (): Record<string, string> => (apiToken ? { Authorization: `Bearer ${apiToken}` } : {});
+
+/** Adresse d'un fichier du moteur pour une balise image, audio ou video (qui ne peut pas envoyer d'en-tete). */
+export function fileUrl(path: string, params: Record<string, string | number> = {}): string {
+  const query = new URLSearchParams(Object.fromEntries(Object.entries(params).map(([k, v]) => [k, String(v)])));
+  if (apiToken) query.set("token", apiToken);
+  const text = query.toString();
+  return `${API_URL}${path}${text ? `?${text}` : ""}`;
 }
 
 function errorMessage(status: number, body: unknown): string {
@@ -63,12 +95,12 @@ function errorMessage(status: number, body: unknown): string {
 export async function request<T>(path: string, init?: RequestInit): Promise<T> {
   let res: Response;
   try {
-    res = await fetch(`${API_URL}${path}`, { headers: { "Content-Type": "application/json" }, ...init });
+    res = await fetch(`${API_URL}${path}`, { headers: { "Content-Type": "application/json", ...authHeaders() }, ...init });
   } catch {
     throw new ApiError("Moteur local injoignable : lance le backend (python -m shortforge).", 0);
   }
   const body: unknown = await res.json().catch(() => null);
-  if (!res.ok) throw new ApiError(errorMessage(res.status, body), res.status);
+  if (!res.ok) throw new ApiError(errorMessage(res.status, body), res.status, String((body as { kind?: unknown } | null)?.kind ?? ""));
   return body as T;
 }
 
@@ -81,7 +113,7 @@ export async function upload<T>(path: string, file: File, params: Record<string,
   const query = new URLSearchParams({ filename: file.name, ...Object.fromEntries(Object.entries(params).map(([k, v]) => [k, String(v)])) });
   let res: Response;
   try {
-    res = await fetch(`${API_URL}${path}?${query}`, { method: "PUT", body: file });
+    res = await fetch(`${API_URL}${path}?${query}`, { method: "PUT", body: file, headers: authHeaders() });
   } catch {
     throw new ApiError("Moteur local injoignable : lance le backend.", 0);
   }
@@ -90,8 +122,8 @@ export async function upload<T>(path: string, file: File, params: Record<string,
   return body as T;
 }
 
-export const assetUrl = (assetId: string) => `${API_URL}/api/assets/${assetId}/file`;
-export const eventsUrl = (projectId: string) => `${API_URL.replace(/^http/, "ws")}/api/projects/${projectId}/events`;
+export const assetUrl = (assetId: string) => fileUrl(`/api/assets/${assetId}/file`);
+export const eventsUrl = (projectId: string) => fileUrl(`/api/projects/${projectId}/events`).replace(/^http/, "ws");
 
 type ScriptPatch = Partial<{ hook: string; body: string; conclusion: string; call_to_action: string; scenes: SceneEdit[] }>;
 type ScenePatch = Partial<{
@@ -110,6 +142,18 @@ type ProviderPatch = Partial<{ enabled: boolean; cost_per_second_usd: number; co
 type SettingsPatch = Partial<Pick<AppSettings, "engine_rules" | "manual_trends" | "comfyui_image_workflow">>;
 
 export const api = {
+  aiProviders: () => get<AiProviderInfo[]>("/api/ai/providers"),
+  aiUpdateProvider: (id: string, body: { base_url?: string; api_key?: string }) =>
+    send<AiProviderInfo>("PUT", `/api/ai/providers/${id}`, body),
+  aiDeleteKey: (id: string) => send<AiProviderInfo>("DELETE", `/api/ai/providers/${id}/key`),
+  aiTestProvider: (id: string) => send<AiTestResult>("POST", `/api/ai/providers/${id}/test`),
+  aiModels: (id: string, refresh = false) => get<AiModel[]>(`/api/ai/providers/${id}/models?refresh=${refresh}`),
+  aiTasks: () => get<AiTask[]>("/api/ai/tasks"),
+  aiSetTask: (task: string, body: AiTaskInput) => send<AiTask[]>("PUT", `/api/ai/tasks/${task}`, body),
+  aiResetTask: (task: string) => send<AiTask[]>("DELETE", `/api/ai/tasks/${task}`),
+  aiCalls: () => get<AiCall[]>("/api/ai/calls?limit=20"),
+  security: () => get<SecurityStatus>("/api/security"),
+
   health: () => get<Health>("/api/health"),
   status: () => get<ServicesStatus>("/api/status"),
 

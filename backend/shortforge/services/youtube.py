@@ -33,6 +33,7 @@ from shortforge.services.publish_guard import PublishBlockedError, is_human_acto
 from shortforge.services.render import file_sha256, latest_render, probe, spec_problems
 from shortforge.services.safety import content_issues
 from shortforge.services.scripts import current_script
+from shortforge.vault import Vault, VaultError
 
 SCOPES = "https://www.googleapis.com/auth/youtube.upload https://www.googleapis.com/auth/youtube.readonly"
 AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
@@ -234,8 +235,10 @@ def token_path(settings: Settings) -> Path:
 class YouTubeClient:
     """Appels a l'API YouTube Data v3 (connexion, chaine, envoi d'une video)."""
 
-    def __init__(self, settings: Settings, *, transport: httpx.BaseTransport | None = None) -> None:
+    def __init__(self, settings: Settings, *, transport: httpx.BaseTransport | None = None,
+                 vault: Vault | None = None) -> None:
         self.settings = settings
+        self.vault = vault
         self._http = httpx.Client(timeout=120, transport=transport)
         self._state = ""
 
@@ -279,7 +282,7 @@ class YouTubeClient:
         path = Path(channel.token_path)
         if not path.is_file():
             raise YouTubeError("Chaîne YouTube déconnectée : reconnecte-la dans Paramètres.")
-        stored = json.loads(path.read_text(encoding="utf-8"))
+        stored = self._read_token(path)
         if stored.get("access_token") and stored.get("expires_at", 0) > time.time() + 60:
             return str(stored["access_token"])
         token = self._token_request({**client_secrets(self.settings), "grant_type": "refresh_token",
@@ -331,10 +334,44 @@ class YouTubeClient:
         data: dict[str, Any] = res.json()
         return data
 
-    @staticmethod
-    def _save_token(path: Path, token: dict[str, Any]) -> None:
+    def _encrypts(self) -> bool:
+        return self.vault is not None and self.vault.available
+
+    def _save_token(self, path: Path, token: dict[str, Any]) -> None:
+        """Jeton chiffre par le coffre quand il est disponible ; sinon comme avant (fichier local)."""
         keep = {k: token[k] for k in ("access_token", "refresh_token", "expires_at", "scope") if k in token}
-        path.write_text(json.dumps(keep), encoding="utf-8")
+        text = json.dumps(keep)
+        if self._encrypts() and self.vault is not None:
+            sealed = self.vault.encrypt(text)
+            if self.vault.decrypt(sealed) != text:
+                raise YouTubeError("Le coffre n'a pas pu protéger le jeton YouTube : rien n'a été modifié.")
+            text = sealed
+        temporary = path.with_suffix(".tmp")
+        temporary.write_text(text, encoding="utf-8")
+        temporary.replace(path)  # remplacement atomique : jamais de jeton a moitie ecrit
+
+    def _read_token(self, path: Path) -> dict[str, Any]:
+        raw = path.read_text(encoding="utf-8").strip()
+        if raw.startswith("{"):  # jeton d'une version 0.5.x, en clair : chiffre sur place, sans le perdre
+            stored: dict[str, Any] = json.loads(raw)
+            if self._encrypts():
+                self._save_token(path, stored)
+            return stored
+        if not self._encrypts() or self.vault is None:
+            raise YouTubeError("Jeton YouTube protégé par le coffre, mais le coffre est indisponible sur cette "
+                               "session. Reconnecte la chaîne dans Paramètres.")
+        try:
+            data: dict[str, Any] = json.loads(self.vault.decrypt(raw))
+        except VaultError as exc:
+            raise YouTubeError("Jeton YouTube illisible (la clé du coffre a changé) : reconnecte la chaîne dans "
+                               "Paramètres.") from exc
+        return data
+
+    def token_encrypted(self, path: Path) -> bool | None:
+        """Vrai si le jeton est chiffre, faux s'il est en clair, None s'il n'existe pas."""
+        if not path.is_file():
+            return None
+        return not path.read_text(encoding="utf-8").lstrip().startswith("{")
 
     @staticmethod
     def _raise(res: httpx.Response) -> None:

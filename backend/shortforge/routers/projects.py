@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import secrets
 
 from fastapi import APIRouter, Depends, Query, Request, WebSocket, WebSocketDisconnect, status
 from fastapi.responses import JSONResponse
@@ -102,6 +103,10 @@ def resume(project_id: str, request: Request, session: Session = Depends(get_ses
 @router.websocket("/{project_id}/events")
 async def project_events(websocket: WebSocket, project_id: str) -> None:
     """Envoie l'etat du pipeline a chaque changement (progression en direct pour l'interface)."""
+    expected = websocket.app.state.api_token
+    if expected and not secrets.compare_digest(websocket.query_params.get("token", "").encode(), expected.encode()):
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+        return
     await websocket.accept()
     db = websocket.app.state.db
     last = ""

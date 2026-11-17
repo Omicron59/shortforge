@@ -1,7 +1,7 @@
 // Voix off locale (Piper, voix Windows/macOS) ou ElevenLabs, et sous-titres animes (20 styles, 7 effets).
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { API_URL, api } from "../api/client";
+import { api, fileUrl } from "../api/client";
 import { useAction } from "../api/hooks";
 import type { ProjectDetail, SubtitlePreset } from "../api/types";
 import { WithProject } from "../components/Layout";
@@ -27,7 +27,7 @@ function VoiceSettings() {
   const [sampleUrl, setSampleUrl] = useState<string | null>(null);
   const sample = useAction(async () => {
     const res = await api.voiceSample();
-    setSampleUrl(`${API_URL}${res.url}?t=${Date.now()}`);
+    setSampleUrl(fileUrl(res.url, { t: Date.now() }));
     return res;
   });
   const s = state.data;

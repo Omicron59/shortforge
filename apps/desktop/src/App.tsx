@@ -17,6 +17,12 @@ import Formats from "./pages/Formats";
 import LongVideo from "./pages/LongVideo";
 import MyStyle from "./pages/MyStyle";
 import Onboarding from "./pages/Onboarding";
+import SettingsAI from "./pages/SettingsAI";
+import BriefPage from "./pages/create/Brief";
+import IdeasPage from "./pages/create/Ideas";
+import Resume from "./pages/create/Resume";
+import ScriptPage from "./pages/create/Script";
+import StudioPage from "./pages/create/Studio";
 
 export default function App() {
   return (
@@ -31,6 +37,14 @@ export default function App() {
           <Route path="/apercu" element={<Preview />} />
           <Route path="/production" element={<Queue />} />
           <Route path="/parametres" element={<Settings />} />
+          <Route path="/parametres/ia" element={<SettingsAI />} />
+          {/* Nouveau parcours de creation ; l'ancien (idees, script, scenes, voix, apercu) reste disponible. */}
+          <Route path="/creer" element={<BriefPage />} />
+          <Route path="/creer/:id" element={<Resume />} />
+          <Route path="/creer/:id/brief" element={<BriefPage />} />
+          <Route path="/creer/:id/idees" element={<IdeasPage />} />
+          <Route path="/creer/:id/script" element={<ScriptPage />} />
+          <Route path="/creer/:id/studio" element={<StudioPage />} />
           <Route path="/historique" element={<History />} />
           <Route path="/statistiques" element={<Stats />} />
           <Route path="/planning" element={<Planning />} />

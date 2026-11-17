@@ -302,7 +302,7 @@ def _video(session: Session, video_id: str) -> CompetitorVideo:
 @router.post("/competitor-videos/{video_id}/recipe")
 def video_recipe(video_id: str, session: Session = Depends(get_session),
                  runtime: Runtime = Depends(get_runtime)) -> dict[str, Any]:
-    return growth.extract_recipe(session, runtime.llm, _video(session, video_id))
+    return growth.extract_recipe(session, runtime.llm_for("analysis"), _video(session, video_id))
 
 
 class FromFormatIn(BaseModel):
@@ -323,7 +323,7 @@ def make_short_from_format(video_id: str, payload: FromFormatIn, request: Reques
     service = build_service(request, session)
     project = service.create_project("Nouveau Short", niche=payload.niche, language=payload.language,
                                      video_mode=payload.video_mode)
-    idea = growth.idea_from_format(session, runtime.llm, project, video)
+    idea = growth.idea_from_format(session, runtime.llm_for("ideas"), project, video)
     project.title = idea.title[:200]
     service.skip_steps(project, [StepName.GENERATE_IDEAS], reason="Idée créée à partir d'un format gagnant.",
                        actor="utilisateur")
@@ -351,7 +351,7 @@ def get_style(session: Session = Depends(get_session)) -> dict[str, Any] | None:
 @router.post("/style/learn")
 def learn_style(payload: StyleIn, session: Session = Depends(get_session),
                 runtime: Runtime = Depends(get_runtime)) -> dict[str, Any]:
-    return growth.learn_style(session, runtime.llm, payload.samples, "textes collés")
+    return growth.learn_style(session, runtime.llm_for("analysis"), payload.samples, "textes collés")
 
 
 @router.post("/style/learn-from-videos")
@@ -360,7 +360,7 @@ def learn_style_from_videos(session: Session = Depends(get_session),
     """A partir des transcriptions de tes videos longues importees."""
     texts = [" ".join(s["text"] for s in v.transcript)[:3000]
              for v in session.scalars(select(SourceVideo).where(SourceVideo.status != "imported")) if v.transcript]
-    return growth.learn_style(session, runtime.llm, texts, "transcriptions de tes vidéos")
+    return growth.learn_style(session, runtime.llm_for("analysis"), texts, "transcriptions de tes vidéos")
 
 
 @router.put("/style/enabled")
@@ -405,7 +405,7 @@ def refresh_stats(session: Session = Depends(get_session), runtime: Runtime = De
 
 @router.post("/performance/insights")
 def insights(session: Session = Depends(get_session), runtime: Runtime = Depends(get_runtime)) -> dict[str, Any]:
-    return growth.compute_insights(session, runtime.llm)
+    return growth.compute_insights(session, runtime.llm_for("analysis"))
 
 
 # ── Planning de la semaine et boite de validation ──
@@ -453,7 +453,7 @@ def planning_pool(payload: PoolIn, request: Request, session: Session = Depends(
     service = build_service(request, session)
     pool = planning.create_pool(service, niche=payload.niche, language=payload.language,
                                 video_mode=payload.video_mode)
-    result = generate_ideas(session, runtime.llm, pool, trend_sources=runtime.trend_sources(session),
+    result = generate_ideas(session, runtime.llm_for("ideas"), pool, trend_sources=runtime.trend_sources(session),
                             count=min(21, payload.count * 2))
     return {"pool_id": pool.id, "dates": planning.next_dates(session, payload.count),
             "ideas": [{"id": i.id, "title": i.title, "hook": i.hook, "potential_score": i.potential_score,
@@ -540,7 +540,7 @@ def analyse_source(source_id: str, request: Request, count: int = Query(default=
             try:
                 if not item.transcript:
                     clips.transcribe_source(task_session, runtime.get_transcriber(), item)
-                clips.propose_clips(task_session, runtime.llm, item, count)
+                clips.propose_clips(task_session, runtime.llm_for("analysis"), item, count)
             except Exception as exc:  # garde l'erreur pour l'afficher
                 item.status, item.error = "failed", str(exc)
 

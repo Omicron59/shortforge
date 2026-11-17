@@ -21,6 +21,10 @@
 | `config.py` | Réglages lus depuis `.env` ; clés API en `SecretStr` |
 | `db.py`, `models.py` | SQLite (clés étrangères, WAL), 15 tables + `pipeline_steps` |
 | `runtime.py` | Assemble les dépendances (Ollama, ComfyUI, tendances, moteurs) ; remplaçable dans les tests |
+| `ai/` | Couche IA (0.6.0) : interface `AiProvider`, adaptateurs Ollama local, Ollama Cloud et OpenRouter, `TaskRouter` (modèle par tâche, repli, journal `ai_calls`) |
+| `services/wizard.py`, `routers/wizard.py` | Nouveau parcours (0.7.0) : brief, idées, storyboard éditable, versions, duplication, médias obsolètes ; migration `0003` |
+| `vault.py` | Coffre à secrets : chiffrement Fernet, clé maîtresse dans le trousseau du système (jamais dans la base) |
+| `migrations/` | Alembic : `0001` = schéma 0.5.3, `0002` = coffre et IA ; sauvegarde vérifiée avant toute mise à niveau |
 | `pipeline/steps.py` | Les 15 étapes, validations humaines, transitions autorisées |
 | `pipeline/engine.py` | `PipelineService` : avancer, valider, rejeter, refaire, annuler, reprendre |
 | `pipeline/default_handlers.py` | Branche les services sur les étapes |

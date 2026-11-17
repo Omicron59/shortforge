@@ -31,7 +31,7 @@ def build_handlers(runtime: Runtime) -> HandlerRegistry:
 
     def ideas_step(ctx: StepContext) -> dict[str, Any]:
         sources = runtime.trend_sources(ctx.session)
-        result = generate_ideas(ctx.session, runtime.llm, _project(ctx), trend_sources=sources)
+        result = generate_ideas(ctx.session, runtime.llm_for("ideas"), _project(ctx), trend_sources=sources)
         return {"idea_ids": [i.id for i in result.ideas], "rejected": result.rejected, "warnings": result.warnings}
 
     def select_idea_check(ctx: StepContext) -> None:
@@ -42,7 +42,7 @@ def build_handlers(runtime: Runtime) -> HandlerRegistry:
         idea = selected_idea(ctx.session, ctx.project_id)
         if idea is None:
             raise PipelineError("Aucune idée choisie.")
-        result = write_script(ctx.session, runtime.llm, _project(ctx), idea)
+        result = write_script(ctx.session, runtime.llm_for("script"), _project(ctx), idea)
         return {"script_id": result.script.id, "version": result.script.version, "scenes": len(result.scenes),
                 "estimated_duration_s": result.script.estimated_duration_s, "warnings": result.warnings}
 

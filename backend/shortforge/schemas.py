@@ -100,6 +100,13 @@ class IdeaOut(BaseModel):
     visual_style: str
     sources: list[str]
     selected: bool
+    summary: str = ""
+    difficulty: str = ""
+    resources: list[str] = []
+    fit_reason: str = ""
+    saved: bool = False
+    batch: int = 0
+    parent_id: str | None = None
 
 
 class SceneOut(BaseModel):
@@ -120,6 +127,8 @@ class SceneOut(BaseModel):
     seed: int | None
     image_status: str
     status: str
+    on_screen_text: str = ""
+    visual_intent: str = ""
 
 
 class ScriptOut(BaseModel):

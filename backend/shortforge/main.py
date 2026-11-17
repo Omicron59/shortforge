@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import logging
+import secrets
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from typing import Any
 
 from fastapi import FastAPI, Request
 from fastapi import status as http
@@ -16,12 +18,14 @@ from shortforge.config import Settings, get_settings
 from shortforge.db import Database
 from shortforge.integrations.comfyui import ComfyUIError
 from shortforge.integrations.ollama import LLMError
+from shortforge.migrations import migrate
 from shortforge.pipeline import HandlerRegistry, PipelineError, PipelineService
 from shortforge.pipeline.default_handlers import build_handlers
 from shortforge.pipeline.engine import ProjectNotFoundError
 from shortforge.pipeline.runner import PipelineRunner
 from shortforge.providers.base import ProviderError
 from shortforge.routers import (
+    ai,
     budget,
     comfyui,
     content,
@@ -33,6 +37,7 @@ from shortforge.routers import (
     release,
     status,
     studio,
+    wizard,
 )
 from shortforge.routers import settings as settings_router
 from shortforge.runtime import Runtime, build_runtime
@@ -40,12 +45,17 @@ from shortforge.services.app_settings import get_value
 from shortforge.services.production import ProductionError
 from shortforge.services.provider_catalog import seed_providers
 from shortforge.services.publish_guard import PublishBlockedError
+from shortforge.vault import VaultError
 
 logger = logging.getLogger("shortforge")
 
 # Origines de la fenetre Tauri (Windows / macOS-Linux) et du serveur Vite en developpement.
 ALLOWED_ORIGINS = ["tauri://localhost", "http://tauri.localhost", "https://tauri.localhost",
                    "http://localhost:1420", "http://127.0.0.1:1420"]
+
+# Routes ouvertes : l'etat du moteur, et le retour de Google apres la connexion YouTube (protege par
+# son propre jeton de securite a usage unique).
+OPEN_PATHS = frozenset({"/api/health", "/api/youtube/oauth/callback"})
 
 
 def create_app(settings: Settings | None = None, registry: HandlerRegistry | None = None,
@@ -58,7 +68,12 @@ def create_app(settings: Settings | None = None, registry: HandlerRegistry | Non
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         db = Database(settings.database_url)
-        db.create_all()
+        report = migrate(db, settings.shortforge_data_dir / "sauvegardes")
+        if report.backup:
+            logger.warning("Base mise à niveau ; sauvegarde : %s", report.backup)
+        bind = getattr(runtime.llm, "bind", None)
+        if bind:
+            bind(db)
         with db.session() as session:
             seed_providers(session)
             saved_url = get_value(session, "comfyui_url")
@@ -77,6 +92,23 @@ def create_app(settings: Settings | None = None, registry: HandlerRegistry | Non
     app.state.settings = settings
     app.state.registry = registry
     app.state.runtime = runtime
+    expected = settings.shortforge_api_token.get_secret_value() if settings.shortforge_api_token else ""
+    app.state.api_token = expected
+    app.state.cancelled_requests = set()  # generations annulees par l'utilisateur (nouveau parcours)
+
+    @app.middleware("http")
+    async def _require_token(request: Request, call_next: Any) -> Any:
+        """API locale reservee a l'application : sans le jeton de session, tout est refuse."""
+        if expected and request.method != "OPTIONS" and request.url.path not in OPEN_PATHS:
+            given = request.headers.get("authorization", "").removeprefix("Bearer ").strip()
+            if not given and request.method == "GET":  # images, sons et videos charges par une balise HTML
+                given = request.query_params.get("token", "")
+            if not secrets.compare_digest(given.encode(), expected.encode()):
+                return JSONResponse(status_code=http.HTTP_401_UNAUTHORIZED,
+                                    content={"detail": "Accès refusé : cette API est réservée à l'application "
+                                                       "ShortForge."})
+        return await call_next(request)
+
     app.add_middleware(CORSMiddleware, allow_origins=ALLOWED_ORIGINS, allow_methods=["*"], allow_headers=["*"])
 
     @app.exception_handler(PublishBlockedError)
@@ -93,14 +125,20 @@ def create_app(settings: Settings | None = None, registry: HandlerRegistry | Non
     async def _value_error(_: Request, exc: ValueError) -> JSONResponse:
         return JSONResponse(status_code=http.HTTP_400_BAD_REQUEST, content={"detail": str(exc)})
 
+    @app.exception_handler(VaultError)
+    async def _vault_error(_: Request, exc: VaultError) -> JSONResponse:
+        return JSONResponse(status_code=http.HTTP_503_SERVICE_UNAVAILABLE, content={"detail": str(exc)})
+
     @app.exception_handler(LLMError)
     @app.exception_handler(ComfyUIError)
     @app.exception_handler(ProviderError)
     @app.exception_handler(ProductionError)
     async def _service_error(_: Request, exc: Exception) -> JSONResponse:
-        return JSONResponse(status_code=http.HTTP_502_BAD_GATEWAY, content={"detail": str(exc)})
+        kind = getattr(exc, "kind", "")  # cle invalide, quota, modele absent, delai depasse...
+        code = http.HTTP_409_CONFLICT if kind == "needs_paid_confirmation" else http.HTTP_502_BAD_GATEWAY
+        return JSONResponse(status_code=code, content={"detail": str(exc), "kind": kind})
 
-    for module in (health, status, projects, content, production, providers, budget, comfyui, settings_router,
-                   library, release, studio):
+    for module in (ai, health, status, projects, content, production, providers, budget, comfyui, settings_router,
+                   library, release, studio, wizard):
         app.include_router(module.router)
     return app
