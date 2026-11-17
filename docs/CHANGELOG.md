@@ -12,10 +12,18 @@
 - Signalement des images, de la voix, des sous-titres et du rendu produits avant une modification (rien n'est relancé tout seul).
 - Annulation d'une génération : son résultat n'est pas enregistré.
 - Tâches IA « Storyboard » et « Variantes » dans Réglages > Intelligence artificielle ; le modèle utilisé est affiché discrètement.
+- Texte à l'écran incrusté dans la vidéo exportée, en haut, pendant toute sa scène.
+- Appels texte payés à l'usage comptés dans les plafonds de budget du jour et du mois, et refusés au-delà (repli sur le modèle de secours s'il y en a un). Un modèle sans tarif publié est refusé. Les modèles Ollama par abonnement comptent 0 $.
+
+### Corrigé (après les premiers tests sur Windows)
+- Durée réelle d'une scène affichée une fois la voix générée ; bouton « Vidéo à jour » quand rien n'est à refaire.
+- Pastille d'état d'Ollama sans test manuel ; les modèles « :cloud » sont signalés comme s'exécutant dans le cloud.
+- Anciens projets : durée visée reprise de leur idée au lieu de 30 s ; un projet sans étapes s'ouvre quand même.
 
 ### Limites connues
-- Le texte à l'écran est visible dans l'aperçu du storyboard, pas encore incrusté dans la vidéo rendue.
+- Taille et position du texte à l'écran fixes.
 - Voix par scène et musique générée : non intégrées.
+- Pas d'installateur pour les Mac Intel (bibliothèque de chiffrement incompatible sur cette plateforme).
 
 ## 0.6.0 — 16/11/2026 (non publiée)
 
