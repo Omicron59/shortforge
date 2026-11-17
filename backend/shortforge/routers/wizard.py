@@ -40,7 +40,9 @@ TASKS = ("ideas", "script", "storyboard", "variants")
 # --- outils ---
 def _project(request: Request, session: Session, project_id: str) -> tuple[PipelineService, Project]:
     service = build_service(request, session)
-    return service, service.get_project(project_id)
+    project = service.get_project(project_id)
+    service.ensure_steps(project)  # un projet sans ses etapes s'ouvre quand meme
+    return service, project
 
 
 def _scene(session: Session, scene_id: str) -> tuple[Scene, Project]:

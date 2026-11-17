@@ -88,6 +88,17 @@ class BudgetService:
                 reasons.append(f"dépasse le budget {label} ({format_usd(limits[key])}, déjà {format_usd(already)})")
         return BudgetDecision(not reasons, amount, reasons)
 
+    def check_global(self, amount: float, *, pending_usd: float = 0.0) -> BudgetDecision:
+        """Plafonds du jour et du mois seulement (appels de texte : ils ne sont pas lies a une scene)."""
+        limits = self.limits()
+        reasons = []
+        for label, since, key in (("du jour", self.day_start(), "budget_max_per_day"),
+                                  ("du mois", self.month_start(), "budget_max_per_month")):
+            already = self.spent(since=since) + pending_usd
+            if already + amount > limits[key] + EPSILON:
+                reasons.append(f"dépasse le budget {label} ({format_usd(limits[key])}, déjà {format_usd(already)})")
+        return BudgetDecision(not reasons, amount, reasons)
+
     def record(self, amount: float, *, project_id: str | None, scene_id: str | None = None,
                provider_id: str | None = None, provider_job_id: str | None = None, description: str = "") -> Cost:
         cost = Cost(amount_usd=amount, kind="actual", project_id=project_id, scene_id=scene_id,

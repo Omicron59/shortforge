@@ -29,6 +29,7 @@ const STATUS: Record<string, { label: string; tone: Tone }> = {
   failed: { label: "Échec", tone: "danger" }, needs_validation: { label: "Attend ta décision", tone: "warning" }, cancelled: { label: "Annulé", tone: "neutral" },
 };
 type Tab = "texte" | "visuel" | "voix" | "sous-titres" | "musique";
+const TAB_LABELS: Record<Tab, string> = { texte: "Texte", visuel: "Visuel", voix: "Voix", "sous-titres": "Sous-titres", musique: "Musique" };
 type Ask = "reopen" | "images" | "voice" | "render" | null;
 
 function Studio({ id, state, set }: { id: string; state: WizardState; set: (s: WizardState) => void }) {
@@ -56,6 +57,8 @@ function Studio({ id, state, set }: { id: string; state: WizardState; set: (s: W
   const failed = steps.find((s) => PRODUCTION.includes(s.name) && s.status === "failed");
   const rendered = step("render_video")?.status === "done" && !!render.data?.asset_id;
   const staleAny = state.stale.voice || state.stale.subtitles || state.stale.render || state.stale.images.length > 0;
+  const upToDate = rendered && !staleAny && !failed && !running;
+  const voiceReady = step("generate_voice")?.status === "done" && !(step("generate_voice")?.output as { skipped?: boolean } | null)?.skipped && !state.stale.voice;
 
   const produce = useMutation({ mutationFn: () => api.autopilot(id), onSuccess: () => void live.refetch(), onError });
   const redo = useMutation({
@@ -170,8 +173,8 @@ function Studio({ id, state, set }: { id: string; state: WizardState; set: (s: W
                 </Notice>
               )}
               <div className="mt-4 flex flex-wrap items-center gap-3">
-                <Btn variant="primary" busy={produce.isPending || running} disabled={!!waiting || (rendered && !staleAny && !failed)} onClick={() => produce.mutate()}>
-                  {running ? "Production en cours" : failed ? "Réessayer" : rendered ? "Continuer la production" : "Générer la vidéo"}
+                <Btn variant="primary" busy={produce.isPending || running} disabled={!!waiting || upToDate} onClick={() => produce.mutate()}>
+                  {running ? "Production en cours" : failed ? "Réessayer" : upToDate ? "Vidéo à jour" : rendered ? "Continuer la production" : "Générer la vidéo"}
                 </Btn>
                 {rendered && <Link to="/apercu" className="text-sm text-violet-300 underline">Valider, exporter ou publier</Link>}
               </div>
@@ -185,11 +188,11 @@ function Studio({ id, state, set }: { id: string; state: WizardState; set: (s: W
             <div className="mb-4 flex flex-wrap gap-1.5" role="tablist" aria-label="Propriétés">
               {(["texte", "visuel", "voix", "sous-titres", "musique"] as Tab[]).map((t) => (
                 <button key={t} type="button" role="tab" aria-selected={tab === t} onClick={() => setTab(t)}
-                  className={`min-h-[36px] rounded-lg px-3 text-sm capitalize transition duration-sf focus:outline-none focus-visible:ring-2 focus-visible:ring-sf-primary ${tab === t ? "bg-sf-primary/20 text-sf-text" : "text-sf-muted hover:text-sf-text"}`}>{t}</button>
+                  className={`min-h-[36px] rounded-lg px-3 text-sm transition duration-sf focus:outline-none focus-visible:ring-2 focus-visible:ring-sf-primary ${tab === t ? "bg-sf-primary/20 text-sf-text" : "text-sf-muted hover:text-sf-text"}`}>{TAB_LABELS[t]}</button>
               ))}
             </div>
             <div role="tabpanel">
-              {scene && tab === "texte" && <TextTab key={scene.id} scene={scene} onSaved={() => void client.invalidateQueries({ queryKey: stateKey(id) })} />}
+              {scene && tab === "texte" && <TextTab key={scene.id} scene={scene} voiceReady={voiceReady} onSaved={() => void client.invalidateQueries({ queryKey: stateKey(id) })} />}
               {scene && tab === "visuel" && <VisualTab key={scene.id} projectId={id} scene={scene} image={imageOf(scene.id)} stale={state.stale.images.includes(scene.id)} busy={running} onRedo={() => setAsk("images")}
                 onChanged={() => { void assets.refetch(); void client.invalidateQueries({ queryKey: stateKey(id) }); }} />}
               {tab === "voix" && <StepTab step={step("generate_voice")} stale={state.stale.voice} staleText="La voix a été générée avant tes dernières modifications de texte."
@@ -252,15 +255,17 @@ function StepRow({ step }: { step: Step }) {
   );
 }
 
-function TextTab({ scene, onSaved }: { scene: WizardScene; onSaved: () => void }) {
+function TextTab({ scene, voiceReady, onSaved }: { scene: WizardScene; voiceReady: boolean; onSaved: () => void }) {
   const [form, setForm] = useState({ text: scene.text, on_screen_text: scene.on_screen_text });
   const status = useAutosave(form, (value) => wizard.patchScene(scene.id, value).then(onSaved));
   return (
     <div className="space-y-4">
-      <Labeled label="Voix off" hint={`≈ ${Math.max(1, Math.round(spokenDuration(form.text)))} s (estimation tant que la voix n'est pas générée)`}>
+      <Labeled label="Voix off" hint={voiceReady && form.text === scene.text
+        ? `Durée dans la vidéo : ${Number(scene.duration_s.toFixed(1)).toLocaleString("fr-FR")} s (voix générée)`
+        : `≈ ${Math.max(1, Math.round(spokenDuration(form.text)))} s (estimation : la voix n'est pas encore générée pour ce texte)`}>
         {(fid) => <textarea id={fid} rows={5} className={`${fieldClass} py-2`} value={form.text} onChange={(e) => setForm({ ...form, text: e.target.value })} />}
       </Labeled>
-      <Labeled label="Texte à l'écran" hint="Visible dans l'aperçu du storyboard. Son incrustation dans la vidéo rendue arrive dans un prochain lot.">
+      <Labeled label="Texte à l'écran" hint="Incrusté en haut de la vidéo pendant toute la scène, au prochain montage.">
         {(fid) => <input id={fid} className={fieldClass} value={form.on_screen_text} onChange={(e) => setForm({ ...form, on_screen_text: e.target.value })} />}
       </Labeled>
       <SaveBadge status={status} label="" />

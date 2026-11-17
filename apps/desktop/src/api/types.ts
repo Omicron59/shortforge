@@ -349,6 +349,8 @@ export interface AiProviderInfo {
   base_url: string;
   default_base_url: string;
   base_url_editable: boolean;
+  /** Serveur local joignable (null pour un fournisseur cloud). */
+  reachable: boolean | null;
   last_test: { ok: boolean; message: string; key_checked: boolean; at: string | null } | null;
 }
 /** Modele tel que le fournisseur le declare ; `null` = information non fournie. */
@@ -368,6 +370,8 @@ export interface AiTask {
   task: string;
   label: string;
   is_default: boolean;
+  mode: "local" | "cloud";
+  configured: boolean;
   provider_id: string;
   provider_label: string;
   model: string;
@@ -380,7 +384,7 @@ export interface AiTask {
   timeout_s: number | null;
 }
 export type AiTaskInput = Pick<AiTask, "provider_id" | "model"> &
-  Partial<Omit<AiTask, "task" | "label" | "is_default" | "provider_label">> & { confirm_paid?: boolean; apply_to_all?: boolean };
+  Partial<Omit<AiTask, "task" | "label" | "is_default" | "provider_label" | "mode" | "configured">> & { confirm_paid?: boolean; apply_to_all?: boolean };
 export interface AiTestResult {
   ok: boolean;
   message: string;
@@ -403,6 +407,7 @@ export interface AiCall {
   input_tokens: number | null;
   output_tokens: number | null;
   cost_usd: number | null;
+  billing: "free" | "subscription" | "usage";
 }
 export interface SecurityStatus {
   vault_available: boolean;

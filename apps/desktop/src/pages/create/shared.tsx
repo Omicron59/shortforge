@@ -62,7 +62,7 @@ export function EngineNote({ engine, used }: { engine?: Engine; used?: Engine | 
   return (
     <p className="flex flex-wrap items-center gap-1.5 text-xs text-sf-muted">
       <Dot tone={shown.mode === "local" ? "success" : "primary"} />
-      {used ? "Généré avec" : "Modèle"} : {shown.provider_label} · {shown.model} · {shown.mode === "local" ? "sur ton PC" : "dans le cloud"}
+      {used ? "Généré avec" : "Modèle"} : {shown.provider_label} · {shown.model} · {shown.mode === "local" ? "s'exécute sur ton PC" : shown.provider_id === "ollama" ? "s'exécute dans le cloud (abonnement Ollama)" : "s'exécute dans le cloud"}
       {used?.used_fallback && <span className="text-sf-warning">(modèle de secours utilisé)</span>}
     </p>
   );
@@ -165,6 +165,8 @@ export function Generating({ gen }: { gen: ReturnType<typeof useGeneration> }) {
     : err instanceof ApiError && err.kind === "quota" ? "Quota du fournisseur atteint"
     : err instanceof ApiError && err.kind === "invalid_key" ? "Clé API refusée"
     : err instanceof ApiError && err.kind === "needs_paid_confirmation" ? "Modèle payant non autorisé"
+    : err instanceof ApiError && err.kind === "budget" ? "Plafond de budget atteint"
+    : err instanceof ApiError && err.kind === "unknown_price" ? "Tarif du modèle inconnu"
     : "La génération a échoué";
   return (
     <Notice tone="danger" title={title}>

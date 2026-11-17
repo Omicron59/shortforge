@@ -116,6 +116,7 @@ class RenderPlan:
     music: Path | None = None
     music_volume: float = 0.15
     source_audio: bool = False  # garder le son d'origine des clips (video longue importee)
+    screen_texts: int = 0  # nombre de textes a l'ecran incrustes
     logo: Path | None = None
     logo_position: str = "haut_droite"
     logo_scale: float = 0.16
@@ -219,14 +220,17 @@ def _latest(session: Session, project_id: str, kind: str) -> Asset | None:
     return asset if asset and Path(asset.path).is_file() else None
 
 
-def add_finishing(session: Session, plan: RenderPlan, project: Project) -> None:
-    """Sous-titres, logo et musique (communs aux Shorts generes et aux extraits de videos longues)."""
+def add_finishing(session: Session, plan: RenderPlan, project: Project,
+                  screen: list[dict[str, Any]] | None = None) -> None:
+    """Sous-titres, textes a l'ecran, logo et musique (communs aux Shorts et aux extraits de videos longues)."""
     out_dir = plan.output.parent
     subtitle = current_subtitle(session, project.id)
-    if subtitle and subtitle.segments:
+    segments = subtitle.segments if subtitle and subtitle.segments else []
+    if segments or screen:
         ass = out_dir / "sous-titres.ass"
-        ass.write_text(subs.to_ass(subtitle.segments, subtitle_style(session, subtitle)), encoding="utf-8")
+        ass.write_text(subs.to_ass(segments, subtitle_style(session, subtitle), screen), encoding="utf-8")
         plan.subtitles = ass
+    plan.screen_texts = len(screen or [])
     brand = brand_settings(session)
     if brand["logo_path"] and Path(brand["logo_path"]).is_file():
         plan.logo = Path(brand["logo_path"])
@@ -262,7 +266,7 @@ def plan_render(session: Session, data_dir: Path, project: Project) -> RenderPla
                           f"{MAX_SHORT_DURATION_S} s au plus.")
     voice = _latest(session, project.id, "audio")
     plan.voice = Path(voice.path) if voice else None
-    add_finishing(session, plan, project)
+    add_finishing(session, plan, project, subs.screen_texts(scenes))
     if plan.voice is None and plan.music is None:
         warnings.append("Pas de voix off ni de musique : la vidéo est exportée avec une piste son muette.")
     return plan
@@ -331,7 +335,8 @@ def execute_plan(session: Session, settings: Settings, project: Project, plan: R
                     asset_id=asset.id, status="done")
     session.add(render)
     session.flush()
-    return {"render_id": render.id, "asset_id": asset.id, **info, "warnings": plan.warnings, "quality": quality}
+    return {"render_id": render.id, "asset_id": asset.id, **info, "warnings": plan.warnings, "quality": quality,
+            "screen_texts": plan.screen_texts}
 
 
 def render_video(session: Session, settings: Settings, project: Project) -> dict[str, Any]:

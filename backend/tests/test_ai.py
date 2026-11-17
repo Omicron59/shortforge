@@ -18,12 +18,14 @@ from starlette.websockets import WebSocketDisconnect
 
 from shortforge.ai.base import (
     AiTimeoutError,
+    BudgetExceededError,
     GenerationRequest,
     InvalidKeyError,
     ModelUnavailableError,
     NotConfiguredError,
     PaidConfirmationError,
     QuotaError,
+    UnknownPriceError,
     UnreachableError,
 )
 from shortforge.ai.ollama import OllamaCloudProvider, OllamaLocalProvider
@@ -159,7 +161,11 @@ def test_openrouter_errors_are_named(cloud: FakeCloud) -> None:
 # --- application complete ---
 @pytest.fixture
 def app_client(tmp_path: Path, cloud: FakeCloud) -> Iterator[tuple[TestClient, TaskRouter]]:
-    settings = make_settings(tmp_path, ollama_model="llama3.2:3b")
+    yield from open_client(tmp_path, cloud)
+
+
+def open_client(tmp_path: Path, cloud: FakeCloud, **overrides: Any) -> Iterator[tuple[TestClient, TaskRouter]]:
+    settings = make_settings(tmp_path, ollama_model="llama3.2:3b", **overrides)
     runtime = build_runtime(settings)
     runtime.vault = Vault(MemoryKeyStore())
     router = TaskRouter(settings, runtime.vault, transport=httpx.MockTransport(cloud.handler))
@@ -209,7 +215,8 @@ def test_paid_model_needs_explicit_agreement(app_client: tuple[TestClient, TaskR
     client.put("/api/ai/providers/openrouter", json={"api_key": KEY})
     refused = choose(client, "script", provider_id="openrouter", model="vendor/paid-model")
     assert refused.status_code == 409 and refused.json()["kind"] == "needs_paid_confirmation"
-    assert choose(client, "script", provider_id="openrouter", model="vendor/unknown-price").status_code == 409
+    unknown = choose(client, "script", provider_id="openrouter", model="vendor/unknown-price", confirm_paid=True)
+    assert unknown.status_code == 400 and "tarif" in unknown.json()["detail"]  # impossible a plafonner : refuse
     assert choose(client, "script", provider_id="ollama", model="deepseek-v4.1-flash:cloud").status_code == 409
     assert choose(client, "script", provider_id="openrouter", model="vendor/free-model:free").status_code == 200
     assert choose(client, "script", provider_id="openrouter", model="vendor/paid-model",
@@ -298,3 +305,69 @@ def test_local_api_requires_the_session_token(tmp_path: Path) -> None:
 def test_without_token_configured_the_api_stays_open_for_development(client: TestClient) -> None:
     assert client.get("/api/projects").status_code == 200
     assert client.get("/api/security").json()["api_token_required"] is False
+
+
+# --- budget des appels de texte ---
+def paid_calls(cloud: FakeCloud) -> list[httpx.Request]:
+    return [r for r in cloud.requests if r.url.path.endswith("/chat/completions")]
+
+
+def test_paid_text_call_is_counted_in_the_budget(app_client: tuple[TestClient, TaskRouter]) -> None:
+    from shortforge.services.budget import BudgetService
+
+    client, router = app_client
+    client.put("/api/ai/providers/openrouter", json={"api_key": KEY})
+    choose(client, "script", provider_id="openrouter", model="vendor/paid-model", confirm_paid=True)
+    router.for_task("script").generate_json("s", "p")
+    assert client.get("/api/ai/calls").json()[0]["billing"] == "usage"
+    assert router._db is not None
+    with router._db.session() as session:
+        budget = BudgetService(session, router.settings)
+        assert budget.spent(since=budget.day_start()) == pytest.approx(0.00105)  # cout reel annonce par le fournisseur
+        assert budget.summary()["spent_today"] == pytest.approx(0.001)  # tableau de bord (arrondi a 4 decimales)
+
+
+def test_paid_text_call_over_the_daily_cap_is_not_sent(tmp_path: Path, cloud: FakeCloud) -> None:
+    for client, router in open_client(tmp_path, cloud, budget_max_per_day=0.01):
+        client.put("/api/ai/providers/openrouter", json={"api_key": KEY})
+        choose(client, "script", provider_id="openrouter", model="vendor/paid-model", confirm_paid=True)
+        with pytest.raises(BudgetExceededError, match="budget du jour"):
+            router.for_task("script").generate_json("s", "p")
+        assert paid_calls(cloud) == []  # rien n'est parti chez le fournisseur
+        assert client.get("/api/ai/calls").json()[0]["error_kind"] == "budget"
+
+
+def test_over_budget_falls_back_to_a_free_local_model(tmp_path: Path, cloud: FakeCloud) -> None:
+    for client, router in open_client(tmp_path, cloud, budget_max_per_day=0.01):
+        client.put("/api/ai/providers/openrouter", json={"api_key": KEY})
+        choose(client, "ideas", provider_id="openrouter", model="vendor/paid-model", confirm_paid=True,
+               fallback_provider_id="ollama", fallback_model="llama3.2:3b")
+        assert router.for_task("ideas").generate_json("s", "p") == {"via": "127.0.0.1", "model": "llama3.2:3b"}
+        assert paid_calls(cloud) == []
+
+
+def test_unknown_price_is_never_used_even_if_already_chosen(app_client: tuple[TestClient, TaskRouter],
+                                                            cloud: FakeCloud) -> None:
+    from shortforge.models import TaskModel
+
+    client, router = app_client
+    client.put("/api/ai/providers/openrouter", json={"api_key": KEY})
+    assert router._db is not None
+    with router._db.session() as session:  # choix enregistre avant cette regle (ou base modifiee a la main)
+        session.add(TaskModel(task="script", provider_id="openrouter", model="vendor/unknown-price"))
+    with pytest.raises(UnknownPriceError, match="pas publié"):
+        router.for_task("script").generate_json("s", "p")
+    assert paid_calls(cloud) == []
+
+
+def test_subscription_model_costs_nothing_per_call(app_client: tuple[TestClient, TaskRouter]) -> None:
+    from shortforge.services.budget import BudgetService
+
+    client, router = app_client
+    choose(client, "ideas", provider_id="ollama", model="deepseek-v4.1-flash:cloud", confirm_paid=True)
+    router.for_task("ideas").generate_json("s", "p")
+    call = client.get("/api/ai/calls").json()[0]
+    assert call["mode"] == "cloud" and call["billing"] == "subscription" and call["cost_usd"] is None
+    assert router._db is not None
+    with router._db.session() as session:
+        assert BudgetService(session, router.settings).summary()["spent_today"] == 0

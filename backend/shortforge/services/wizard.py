@@ -133,14 +133,43 @@ class IdeasResult:
 
 # --- brief ---
 def brief_of(session: Session, project: Project) -> Brief:
-    """Brief du projet ; pour un projet de l'ancien parcours, il est deduit de sa niche et de sa langue."""
+    """Brief du projet ; pour un projet de l'ancien parcours, il est deduit de sa niche, sa langue et son idee."""
     brief = session.get(Brief, project.id)
     if brief is None:
         brief = Brief(project_id=project.id, niche=project.niche,
-                      language=project.language if project.language in LANGUAGES else "fr")
+                      language=project.language if project.language in LANGUAGES else "fr",
+                      duration_s=legacy_duration(session, project) or 30)
         session.add(brief)
         session.flush()
+    elif _untouched_legacy(brief, project):  # brief cree par la 0.7.0 avec 30 s par defaut : corrige une fois
+        duration = legacy_duration(session, project)
+        if duration and duration != brief.duration_s:
+            brief.duration_s = duration
+            session.flush()
     return brief
+
+
+def legacy_duration(session: Session, project: Project) -> int | None:
+    """Duree visee d'un projet de l'ancien parcours : celle de son idee, sinon celle de son script."""
+    idea = session.scalars(select(Idea).where(Idea.project_id == project.id)
+                           .order_by(Idea.selected.desc(), Idea.created_at.desc())).first()
+    seconds = idea.estimated_duration_s if idea and idea.estimated_duration_s > 0 else 0.0
+    if not seconds:
+        script = script_service.current_script(session, project.id)
+        seconds = script.estimated_duration_s if script else 0.0
+    return min(DURATIONS, key=lambda d: abs(d - seconds)) if seconds > 0 else None
+
+
+def _untouched_legacy(brief: Brief, project: Project) -> bool:
+    """Brief jamais rempli dans le nouveau parcours, pour un projet qui n'y a pas ete cree.
+
+    Un projet du nouveau parcours porte le titre tire de son brief ; un ancien projet a son propre titre.
+    """
+    defaults = BriefData()
+    untouched = (not brief.subject and not brief.audience and not brief.constraints and not brief.avoid
+                 and not brief.visual_style and brief.goal == defaults.goal and brief.tone == defaults.tone
+                 and brief.platform == defaults.platform and brief.duration_s == defaults.duration_s)
+    return untouched and project.title != project_title(BriefData(niche=brief.niche))
 
 
 def save_brief(session: Session, project: Project, data: BriefData) -> Brief:

@@ -9,6 +9,7 @@ from typing import Any
 
 import httpx
 import pytest
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from shortforge.config import Settings
@@ -310,3 +311,70 @@ def test_missing_client_secrets_has_clear_message(tmp_path: Path) -> None:
     settings = Settings(_env_file=None, shortforge_data_dir=tmp_path)  # type: ignore[call-arg]
     with pytest.raises(youtube.YouTubeError, match="YOUTUBE_CLIENT_SECRETS_FILE"):
         youtube.YouTubeClient(settings).authorization_url()
+
+
+# ── Texte a l'ecran incruste ──
+
+
+def gray_band(video: Path, at_s: float) -> bytes:
+    """Pixels (niveaux de gris) du bandeau du haut de l'image a `at_s` secondes, la ou s'affiche le texte."""
+    import subprocess
+
+    out = subprocess.run(["ffmpeg", "-v", "error", "-ss", f"{at_s:g}", "-i", str(video), "-frames:v", "1",
+                          "-vf", "crop=1080:320:0:260,format=gray", "-f", "rawvideo", "-"],
+                         capture_output=True, check=True)
+    return out.stdout
+
+
+@needs_ffmpeg
+def test_on_screen_text_is_burned_into_the_export(session: Session, tmp_path: Path, media: dict[str, bytes]) -> None:
+    service, _, settings, project_id = build(session, tmp_path, media)
+    service.advance(project_id)
+    service.advance(project_id)
+    idea_id = service.get_step(project_id, StepName.GENERATE_IDEAS).output["idea_ids"][0]  # type: ignore[index]
+    select_idea(session, project_id, idea_id)
+    service.approve(project_id, StepName.SELECT_IDEA, actor="utilisateur")
+    service.advance(project_id)
+    scenes = session.scalars(select(Scene).where(Scene.project_id == project_id).order_by(Scene.position)).all()
+    scenes[0].on_screen_text = "Grille-pain chanteur"  # seulement la premiere scene
+    session.flush()
+    service.advance(project_id)
+    service.approve(project_id, StepName.APPROVE_SCRIPT, actor="utilisateur")
+    service.advance(project_id)
+    service.advance(project_id)
+    service.advance(project_id)
+    service.approve(project_id, StepName.GENERATE_VIDEOS, actor="utilisateur", confirmed=True)
+    for _ in range(5):  # videos, voix, sous-titres, musique, montage
+        step = service.advance(project_id)
+        assert step.status == "done", (step.name, step.error)
+
+    out = service.get_step(project_id, StepName.RENDER_VIDEO).output or {}
+    assert out["screen_texts"] == 1 and (out["width"], out["height"]) == (1080, 1920)
+    first = session.get(Scene, scenes[0].id)
+    assert first is not None
+    ass = (settings.shortforge_data_dir / "projects" / project_id / "render" / "sous-titres.ass").read_text("utf-8")
+    end = render.subs._timestamp(first.duration_s, ".")
+    assert f"Dialogue: 1,0:00:00.00,{end},Ecran,,0,0,0,,{{\\fad(150,150)}}GRILLE-PAIN CHANTEUR" in ass
+    assert ass.count(",Ecran,,") == 1  # la seconde scene n'a pas de texte a l'ecran
+
+    final = render.latest_render(session, project_id)
+    assert final is not None and final.asset_id
+    from shortforge.models import Asset
+
+    with_text = Path(str(session.get(Asset, final.asset_id).path))  # type: ignore[union-attr]
+    kept = tmp_path / "avec_texte.mp4"
+    shutil.copyfile(with_text, kept)
+    first.on_screen_text = ""
+    session.flush()
+    project = session.get(Project, project_id)
+    assert project is not None
+    render.render_video(session, settings, project)
+    middle = first.duration_s / 2
+    band_with, band_without = gray_band(kept, middle), gray_band(with_text, middle)
+    assert len(band_with) == len(band_without) == 1080 * 320
+    changed = sum(1 for a, b in zip(band_with, band_without, strict=True) if abs(a - b) > 40)
+    assert changed > 2000, changed  # le texte est bien dans les pixels de la video, pas seulement dans l'apercu
+    late = first.duration_s + 1.0  # seconde scene : aucun texte, les deux rendus sont identiques a cet endroit
+    pairs = zip(gray_band(kept, late), gray_band(with_text, late), strict=True)
+    later_diff = sum(1 for a, b in pairs if abs(a - b) > 40)
+    assert later_diff < 200, later_diff

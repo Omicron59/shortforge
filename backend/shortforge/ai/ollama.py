@@ -47,6 +47,13 @@ class _OllamaBase(AiProvider):
     def _missing(self, model: str) -> str:
         return f"Le modèle « {model} » n'est pas disponible chez {self.label}."
 
+    def ping(self) -> bool:
+        """Reponse rapide (2 s) pour la pastille d'etat, sans attendre un test complet."""
+        try:
+            return self._call("GET", "/api/tags", timeout_s=2).status_code < 400
+        except AiError:
+            return False
+
     def generate(self, request: GenerationRequest) -> GenerationResult:
         self._require_key()
         options: dict[str, Any] = {}
@@ -83,7 +90,7 @@ class _OllamaBase(AiProvider):
 
 class OllamaLocalProvider(_OllamaBase):
     id = "ollama"
-    label = "Ollama (mon PC)"
+    label = "Ollama (via mon PC)"
     mode = "local"
     billing = "free"
     needs_key = False

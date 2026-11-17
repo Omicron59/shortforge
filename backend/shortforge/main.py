@@ -135,7 +135,8 @@ def create_app(settings: Settings | None = None, registry: HandlerRegistry | Non
     @app.exception_handler(ProductionError)
     async def _service_error(_: Request, exc: Exception) -> JSONResponse:
         kind = getattr(exc, "kind", "")  # cle invalide, quota, modele absent, delai depasse...
-        code = http.HTTP_409_CONFLICT if kind == "needs_paid_confirmation" else http.HTTP_502_BAD_GATEWAY
+        refused = ("needs_paid_confirmation", "budget", "unknown_price")  # refus voulu, pas une panne
+        code = http.HTTP_409_CONFLICT if kind in refused else http.HTTP_502_BAD_GATEWAY
         return JSONResponse(status_code=code, content={"detail": str(exc), "kind": kind})
 
     for module in (ai, health, status, projects, content, production, providers, budget, comfyui, settings_router,

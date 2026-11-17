@@ -60,6 +60,20 @@ class UnreachableError(AiError):
     retry_with_fallback = True
 
 
+class BudgetExceededError(AiError):
+    """Un appel payant depasserait le plafond du jour ou du mois : il n'est pas envoye."""
+
+    kind = "budget"
+    retry_with_fallback = True
+
+
+class UnknownPriceError(AiError):
+    """Modele paye a l'usage dont le tarif n'est pas publie : il n'est pas utilise."""
+
+    kind = "unknown_price"
+    retry_with_fallback = True
+
+
 class PaidConfirmationError(AiError):
     """Un modele payant serait utilise sans accord explicite."""
 

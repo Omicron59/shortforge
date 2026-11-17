@@ -59,6 +59,10 @@ PRESETS: dict[str, dict[str, Any]] = {
 
 ALIGNMENTS = {"bottom": 2, "middle": 5, "top": 8}
 MARGINS_V = {"bottom": 380, "middle": 0, "top": 260}
+# Texte a l'ecran (titre de scene) : en haut, ou au milieu si les sous-titres sont deja en haut.
+SCREEN_TEXT_STYLE: dict[str, Any] = {"font": "Arial", "size": 92, "color": "#FFFFFF",
+                                     "outline_color": "#000000", "outline": 7}
+SCREEN_TEXT_MARGIN_V = 330
 EDITABLE = frozenset({"font", "size", "color", "outline_color", "outline", "highlight_color", "position",
                       "uppercase", "effect", "words_per_line", "box", "bold"})
 
@@ -146,7 +150,21 @@ def _clean(text: str, upper: bool) -> str:
     return text.upper() if upper else text
 
 
-def to_ass(segments: list[dict[str, Any]], style: dict[str, Any]) -> str:
+def screen_texts(scenes: list[Any]) -> list[dict[str, Any]]:
+    """Texte a l'ecran de chaque scene, affiche pendant toute la scene (minutage = duree des scenes du montage)."""
+    events, start = [], 0.0
+    for scene in scenes:
+        text = str(getattr(scene, "on_screen_text", "") or "").strip()
+        end = start + float(scene.duration_s)
+        if text:
+            events.append({"start": round(start, 3), "end": round(end, 3), "text": text})
+        start = end
+    return events
+
+
+def to_ass(segments: list[dict[str, Any]], style: dict[str, Any],
+           screen: list[dict[str, Any]] | None = None) -> str:
+    """Sous-titres (style Default) et, s'il y en a, textes a l'ecran (style Ecran, calque au-dessus)."""
     st = {**_BASE, **style}
     position = st["position"] if st["position"] in ALIGNMENTS else "bottom"
     effect = st["effect"]
@@ -163,7 +181,8 @@ def to_ass(segments: list[dict[str, Any]], style: dict[str, Any]) -> str:
         "Alignment, MarginL, MarginR, MarginV, Encoding\n"
         f"Style: Default,{st['font']},{int(st['size'])},{primary},{secondary},{ass_color(st['outline_color'])},"
         f"{back},{-1 if st.get('bold') else 0},0,0,0,100,100,0,0,{border_style},{int(st['outline'])},"
-        f"{0 if st.get('box') else 2},{ALIGNMENTS[position]},80,80,{MARGINS_V[position]},1\n\n"
+        f"{0 if st.get('box') else 2},{ALIGNMENTS[position]},80,80,{MARGINS_V[position]},1\n"
+        f"{_screen_style(position)}\n\n"
         "[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n"
     )
     upper = bool(st.get("uppercase"))
@@ -205,4 +224,16 @@ def to_ass(segments: list[dict[str, Any]], style: dict[str, Any]) -> str:
             dialogue(seg["start"], seg["end"], "{\\fad(140,100)}" + " ".join(texts))
         else:
             dialogue(seg["start"], seg["end"], " ".join(texts))
+    for event in screen or []:
+        if event["end"] - event["start"] > 0.01:
+            lines.append(f"Dialogue: 1,{_timestamp(event['start'], '.')},{_timestamp(event['end'], '.')},Ecran,,0,0,0,,"
+                         "{\\fad(150,150)}" + _clean(event["text"], True))
     return header + "\n".join(lines) + "\n"
+
+
+def _screen_style(subtitle_position: str) -> str:
+    sc = SCREEN_TEXT_STYLE
+    alignment, margin = (5, 0) if subtitle_position == "top" else (8, SCREEN_TEXT_MARGIN_V)
+    return (f"Style: Ecran,{sc['font']},{sc['size']},{ass_color(sc['color'])},{ass_color(sc['color'])},"
+            f"{ass_color(sc['outline_color'])},{ass_color(sc['outline_color'], '80')},-1,0,0,0,100,100,0,0,1,"
+            f"{sc['outline']},3,{alignment},90,90,{margin},1")

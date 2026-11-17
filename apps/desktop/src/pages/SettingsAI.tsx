@@ -62,8 +62,10 @@ export default function SettingsAI() {
 }
 
 function statusTone(p: AiProviderInfo): Tone {
+  if (p.reachable === false) return "danger"; // serveur local eteint, meme si un ancien test avait reussi
   if (p.last_test) return !p.last_test.ok ? "danger" : p.last_test.key_checked || !p.needs_key ? "success" : "warning";
-  return p.needs_key && !p.key_set ? "neutral" : "warning";
+  if (p.reachable) return "success";
+  return "neutral"; // fournisseur cloud pas encore teste
 }
 
 function LoadError({ error, retry }: { error: unknown; retry: () => void }) {
@@ -105,7 +107,7 @@ function ProviderSettings({ provider, vaultOk }: { provider: AiProviderInfo; vau
       <div className="flex flex-wrap items-center gap-2">
         <Tag tone={provider.mode === "local" ? "success" : "primary"}>{MODE_LABEL[provider.mode]}</Tag>
         <Tag tone={provider.billing === "free" ? "neutral" : "warning"}>{BILLING_LABEL[provider.billing]}</Tag>
-        {provider.id === "ollama" && <span className="text-xs text-sf-muted">Les modèles « :cloud » installés dans Ollama tournent sur les serveurs d'Ollama.</span>}
+        {provider.id === "ollama" && <span className="text-xs text-sf-muted">Ollama tourne sur ton PC, mais les modèles « :cloud » s'exécutent sur les serveurs d'Ollama : tes textes quittent alors ton PC.</span>}
       </div>
       <div className="grid gap-4 lg:grid-cols-2">
         <Labeled label="Adresse du serveur" hint={provider.base_url_editable ? `Par défaut : ${provider.default_base_url}` : "Adresse fixe pour ce fournisseur."}>
@@ -237,6 +239,7 @@ function PickDialog({ model, tasks, onClose }: { model: AiModel; tasks: AiTask[]
   const [target, setTarget] = useState("all");
   const [agreed, setAgreed] = useState(false);
   const mayCost = model.paid !== false;
+  const unknownUsagePrice = model.provider_id === "openrouter" && (model.price_in_per_mtok === null || model.price_out_per_mtok === null);
   const save = useMutation({
     mutationFn: () => {
       const task = target === "all" ? tasks[0] : tasks.find((t) => t.task === target);
@@ -248,7 +251,8 @@ function PickDialog({ model, tasks, onClose }: { model: AiModel; tasks: AiTask[]
   });
   return (
     <Dialog title={`Utiliser ${model.label}`} onClose={onClose}
-      footer={<><Btn variant="ghost" onClick={onClose}>Annuler</Btn><Btn variant="primary" busy={save.isPending} disabled={mayCost && !agreed} onClick={() => save.mutate()}>Confirmer</Btn></>}>
+      footer={<><Btn variant="ghost" onClick={onClose}>Annuler</Btn><Btn variant="primary" busy={save.isPending} disabled={unknownUsagePrice || (mayCost && !agreed)} onClick={() => save.mutate()}>Confirmer</Btn></>}>
+      {unknownUsagePrice && <Notice tone="danger" title="Tarif non publié">ShortForge ne peut pas plafonner la dépense de ce modèle : il ne peut pas être choisi.</Notice>}
       <Labeled label="Pour quelle tâche ?">
         {(id) => (
           <select id={id} className={fieldClass} value={target} onChange={(e) => setTarget(e.target.value)}>
@@ -257,7 +261,7 @@ function PickDialog({ model, tasks, onClose }: { model: AiModel; tasks: AiTask[]
           </select>
         )}
       </Labeled>
-      {mayCost && (
+      {mayCost && !unknownUsagePrice && (
         <Notice tone="warning" title="Ce modèle peut être facturé">
           <p>
             {model.price_in_per_mtok !== null
@@ -302,7 +306,7 @@ function TaskRow({ task, providers }: { task: AiTask; providers: AiProviderInfo[
         <div className="min-w-0">
           <p className="font-medium">{task.label}</p>
           <p className="truncate text-sm text-sf-muted">
-            {task.model ? <>{task.provider_label} · <span className="text-sf-text">{task.model}</span></> : "Aucun modèle choisi : choisis-en un dans la liste ci-dessus."}
+            {task.model ? <>{task.provider_label} · <span className="text-sf-text">{task.model}</span> · {task.mode === "local" ? "s'exécute sur ton PC" : "s'exécute dans le cloud"}</> : "Aucun modèle choisi : choisis-en un dans la liste ci-dessus."}
             {task.fallback_model && <> · secours : {task.fallback_model}</>}
           </p>
         </div>
@@ -373,7 +377,7 @@ function Journal() {
         <div className="overflow-x-auto">
           <table className="w-full min-w-[640px] text-left text-sm">
             <thead className="text-xs text-sf-muted">
-              <tr>{["Heure", "Tâche", "Modèle", "Durée", "Jetons", "Coût", "Résultat"].map((h) => <th key={h} scope="col" className="px-2 py-2 font-normal">{h}</th>)}</tr>
+              <tr>{["Heure", "Tâche", "Modèle", "Exécution", "Durée", "Jetons", "Coût", "Résultat"].map((h) => <th key={h} scope="col" className="px-2 py-2 font-normal">{h}</th>)}</tr>
             </thead>
             <tbody>
               {calls.data.map((c) => (
@@ -381,9 +385,10 @@ function Journal() {
                   <td className="px-2 py-2 text-sf-muted">{new Date(`${c.at}Z`).toLocaleTimeString("fr-FR")}</td>
                   <td className="px-2 py-2">{c.task}</td>
                   <td className="max-w-[220px] truncate px-2 py-2" title={c.model}>{c.model}{c.used_fallback && " (secours)"}</td>
+                  <td className="px-2 py-2">{c.mode === "local" ? "Mon PC" : "Cloud"}</td>
                   <td className="px-2 py-2 tabular-nums">{(c.duration_ms / 1000).toFixed(1)} s</td>
                   <td className="px-2 py-2 tabular-nums">{c.input_tokens ?? "?"} / {c.output_tokens ?? "?"}</td>
-                  <td className="px-2 py-2 tabular-nums">{c.cost_usd === null ? (c.mode === "local" ? "0 $" : "inconnu") : `${c.cost_usd.toFixed(4)} $`}</td>
+                  <td className="px-2 py-2 tabular-nums">{c.cost_usd !== null ? `${c.cost_usd.toFixed(4)} $` : c.billing === "free" ? "0 $" : c.billing === "subscription" ? "abonnement" : "inconnu"}</td>
                   <td className="px-2 py-2">{c.ok ? <Tag tone="success">Réussi</Tag> : <span title={c.error}><Tag tone="danger">{c.error_kind || "Échec"}</Tag></span>}</td>
                 </tr>
               ))}

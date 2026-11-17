@@ -20,23 +20,28 @@ from shortforge.ai.base import (
     TEXT_TASKS,
     AiError,
     AiProvider,
+    BudgetExceededError,
     GenerationRequest,
     Model,
     NotConfiguredError,
     PaidConfirmationError,
+    UnknownPriceError,
 )
 from shortforge.ai.ollama import OllamaCloudProvider, OllamaLocalProvider
 from shortforge.ai.openrouter import OpenRouterProvider
 from shortforge.config import Settings
 from shortforge.db import Database
 from shortforge.integrations.ollama import LLMError, _parse_json
-from shortforge.models import AiCall, AiProviderConfig, TaskModel
+from shortforge.models import AiCall, AiProviderConfig, Cost, TaskModel
+from shortforge.services.budget import BudgetService, format_usd
 from shortforge.vault import Vault, VaultError
 
 logger = logging.getLogger("shortforge.ai")
 PROVIDERS: dict[str, type[AiProvider]] = {p.id: p for p in (OllamaLocalProvider, OllamaCloudProvider,
                                                             OpenRouterProvider)}
 MODELS_CACHE_S = 300
+CHARS_PER_TOKEN = 4  # estimation prudente de la taille d'un prompt avant l'appel
+DEFAULT_OUTPUT_TOKENS = 4000  # reponse maximale supposee quand aucune limite n'est reglee
 
 
 def secret_name(provider_id: str) -> str:
@@ -78,7 +83,7 @@ class TaskRouter:
         self.vault = vault
         self._transport = transport
         self._db: Database | None = None
-        self._pending: list[AiCall] = []
+        self._pending: list[Any] = []  # journal et couts en attente d'ecriture (base occupee)
         self._lock = threading.Lock()
         self._models: dict[tuple[str, str], tuple[float, list[Model]]] = {}
         self._last = threading.local()
@@ -105,6 +110,56 @@ class TaskRouter:
         return {"task": task, "provider_id": plan.primary.provider_id, "provider_label": cls.label if cls else "",
                 "model": plan.primary.model, "mode": self._mode(plan.primary),
                 "configured": bool(plan.primary.model) and key_ok}
+
+    def reachable(self, session: Session, provider_id: str) -> bool | None:
+        """Le serveur local repond-il ? None pour un fournisseur cloud (pas d'appel sans test explicite)."""
+        cls = PROVIDERS.get(provider_id)
+        if cls is None or cls.mode != "local":
+            return None
+        probe = cls(self.base_url(session, provider_id), transport=self._transport)
+        try:
+            return bool(getattr(probe, "ping", probe.is_available)())
+        finally:
+            probe.close()
+
+    def billing(self, choice: Choice) -> str:
+        """« free » (sur le PC), « subscription » (abonnement, sans cout par appel) ou « usage » (paye a l'appel)."""
+        cls = PROVIDERS.get(choice.provider_id)
+        if cls is None:
+            return "usage"
+        if cls.billing == "usage":
+            return "usage"
+        return "subscription" if self._mode(choice) == "cloud" else "free"
+
+    def price(self, session: Session, choice: Choice) -> Model | None:
+        """Modele avec ses tarifs publies ; None si le fournisseur ne le declare pas ou ne repond pas."""
+        try:
+            return next((m for m in self.models(session, choice.provider_id) if m.id == choice.model), None)
+        except LLMError:
+            return None
+
+    def _estimate(self, session: Session, choice: Choice, request: GenerationRequest) -> float:
+        """Cout maximal estime d'un appel paye a l'usage ; refuse un modele dont le tarif est inconnu."""
+        model = self.price(session, choice)
+        if model is None or model.price_in_per_mtok is None or model.price_out_per_mtok is None:
+            raise UnknownPriceError(f"Le tarif de « {choice.model} » n'est pas publié : ShortForge ne l'utilise pas, "
+                                    "pour ne pas dépenser sans plafond. Choisis un modèle au tarif affiché.")
+        tokens_in = (len(request.system) + len(request.prompt)) / CHARS_PER_TOKEN
+        tokens_out = request.max_tokens or DEFAULT_OUTPUT_TOKENS
+        return (tokens_in * model.price_in_per_mtok + tokens_out * model.price_out_per_mtok) / 1_000_000
+
+    def _check_budget(self, session: Session, choice: Choice, request: GenerationRequest) -> float | None:
+        """Pour un appel paye a l'usage : verifie les plafonds avant l'envoi et renvoie l'estimation."""
+        if self.billing(choice) != "usage":
+            return None
+        estimate = self._estimate(session, choice, request)
+        with self._lock:
+            pending = sum(c.amount_usd for c in self._pending if isinstance(c, Cost))
+        decision = BudgetService(session, self.settings).check_global(estimate, pending_usd=pending)
+        if not decision.allowed:
+            raise BudgetExceededError(f"Appel non envoyé à {choice.model} (environ {format_usd(estimate)}) : "
+                                      + " ; ".join(decision.reasons) + ".")
+        return estimate
 
     def _mode(self, choice: Choice) -> str:
         """Un modele « :cloud » d'Ollama passe par le PC mais s'execute dans le cloud."""
@@ -220,7 +275,13 @@ class TaskRouter:
             try:
                 last = ""
                 for _ in range(2):  # une seconde chance si le modele renvoie un JSON invalide
+                    estimate = self._check_budget(session, choice, request)
                     result = provider.generate(request)
+                    if estimate is not None:  # cout reel s'il est communique, sinon l'estimation (prudent)
+                        spent = result.cost_usd if result.cost_usd is not None else estimate
+                        self._queue(Cost(amount_usd=spent, kind="actual", description=(
+                            f"Texte · {cls.label if cls else choice.provider_id} · {choice.model} · {request.task}"
+                            + ("" if result.cost_usd is not None else " (estimé)"))))
                     log.input_tokens = (log.input_tokens or 0) + (result.input_tokens or 0) or None
                     log.output_tokens = (log.output_tokens or 0) + (result.output_tokens or 0) or None
                     if result.cost_usd is not None:
@@ -247,8 +308,11 @@ class TaskRouter:
 
     # --- journal ---
     def _record(self, call: AiCall) -> None:
+        self._queue(call)
+
+    def _queue(self, row: Any) -> None:
         with self._lock:
-            self._pending.append(call)
+            self._pending.append(row)
         self.flush_log()
 
     def flush_log(self) -> None:

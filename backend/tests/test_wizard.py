@@ -366,3 +366,54 @@ def test_project_from_the_old_flow_opens_in_the_new_one(tmp_path: Path) -> None:
         chosen = client.post("/api/wizard/projects/p1/ideas/i1/choose").json()
         assert chosen["selected_idea_id"] == "i1"
         assert client.get("/api/projects/p1/ideas").json()[0]["selected"] is True  # l'ancien parcours le voit aussi
+
+
+# --- anciens projets ---
+def old_project_without_steps(tmp_path: Path, idea_seconds: float) -> None:
+    old_database(tmp_path / "shortforge.sqlite3")  # projet p1, cree en 0.5.3, sans ses etapes
+    con = sqlite3.connect(tmp_path / "shortforge.sqlite3")
+    con.execute("INSERT INTO ideas (id, project_id, title, hook, original_angle, estimated_duration_s, "
+                "potential_score, keywords, reuse_risk, visual_style, sources, selected, created_at) VALUES "
+                "('i1', 'p1', 'Ancienne idée', 'h', 'a', ?, 70, '[]', 'low', '', '[]', 1, '2026-11-01')",
+                (idea_seconds,))
+    con.commit()
+    con.close()
+
+
+def test_project_without_steps_opens_and_gets_its_steps_back(tmp_path: Path) -> None:
+    old_project_without_steps(tmp_path, 44)
+    settings = make_settings(tmp_path)
+    with TestClient(create_app(settings, full_registry(), make_runtime(settings, FakeLLM()))) as client:
+        res = client.get("/api/wizard/projects/p1")
+        assert res.status_code == 200, res.text
+        state = res.json()
+        assert len(state["project"]["steps"]) == 15 and step(state, "generate_ideas") == "pending"
+        assert state["brief"]["duration_s"] == 45  # duree de son idee (44 s), pas 30 s par defaut
+        assert len(client.get("/api/wizard/projects/p1").json()["project"]["steps"]) == 15  # rien en double
+
+
+def test_legacy_brief_created_with_30_s_is_corrected_once(tmp_path: Path) -> None:
+    old_project_without_steps(tmp_path, 58)
+    settings = make_settings(tmp_path)
+    with TestClient(create_app(settings, full_registry(), make_runtime(settings, FakeLLM()))):
+        pass  # premier demarrage : mise a niveau de la base
+    con = sqlite3.connect(tmp_path / "shortforge.sqlite3")  # brief vide cree par la 0.7.0 avec 30 s
+    con.execute("INSERT INTO briefs (project_id, subject, niche, audience, goal, language, tone, duration_s, platform, "
+                "visual_style, constraints, avoid, updated_at) VALUES ('p1', '', 'cuisine', '', 'vues', 'fr', "
+                "'educatif', 30, 'youtube_shorts', '', '', '', '2026-11-17')")
+    con.commit()
+    con.close()
+    with TestClient(create_app(settings, full_registry(), make_runtime(settings, FakeLLM()))) as client:
+        assert client.get("/api/wizard/projects/p1").json()["brief"]["duration_s"] == 60
+        brief = {**client.get("/api/wizard/projects/p1").json()["brief"], "duration_s": 20}
+        client.put("/api/wizard/projects/p1/brief", json=brief)  # choix de l'utilisateur : respecte ensuite
+        assert client.get("/api/wizard/projects/p1").json()["brief"]["duration_s"] == 20
+
+
+def test_new_flow_brief_keeps_its_default_duration(flow: Flow) -> None:
+    pid = flow.create(subject="", niche="jardinage")["project"]["id"]  # seulement une niche : 30 s par defaut
+    flow.llm.responses.append(ideas_json("Une idée de 60 secondes"))
+    ideas = flow.post(f"/projects/{pid}/ideas")["ideas"]
+    flow.client.patch(f"/api/wizard/ideas/{ideas[0]['id']}", json={"title": "Une idée retouchée"})
+    flow.post(f"/projects/{pid}/ideas/{ideas[0]['id']}/choose")
+    assert flow.state(pid)["brief"]["duration_s"] == 30

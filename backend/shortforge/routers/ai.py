@@ -54,6 +54,7 @@ def _provider_out(session: Session, ai: TaskRouter, provider_id: str) -> dict[st
         "needs_key": cls.needs_key, "key_set": hint is not None, "key_hint": hint or "", "key_help": cls.key_help,
         "base_url": ai.base_url(session, provider_id), "default_base_url": cls.default_base_url,
         "base_url_editable": cls.base_url_editable,
+        "reachable": ai.reachable(session, provider_id),
         "last_test": None if row is None or row.last_test_ok is None else {
             "ok": row.last_test_ok, "message": row.last_test_message, "key_checked": row.last_test_key_checked,
             "at": row.last_test_at.isoformat() if row.last_test_at else None},
@@ -177,6 +178,7 @@ def set_task(task: str, payload: TaskIn, session: Session = Depends(get_session)
         _known(payload.fallback_provider_id)
     primary = Choice(payload.provider_id, payload.model.strip())
     _must_exist(session, ai, primary)
+    _known_price(session, ai, primary)
     targets = list(TEXT_TASKS) if payload.apply_to_all else [task]
     changed = any(ai.assignment(session, name).primary != primary for name in targets)
     if changed and ai.is_paid(session, primary) and not payload.confirm_paid:
@@ -184,7 +186,9 @@ def set_task(task: str, payload: TaskIn, session: Session = Depends(get_session)
             f"« {primary.model} » chez {PROVIDERS[primary.provider_id].label} peut être payant (à l'usage ou via un "
             "abonnement). Confirme pour l'utiliser.")
     if payload.fallback_model:
-        _must_exist(session, ai, Choice(payload.fallback_provider_id, payload.fallback_model.strip()))
+        fallback = Choice(payload.fallback_provider_id, payload.fallback_model.strip())
+        _must_exist(session, ai, fallback)
+        _known_price(session, ai, fallback)
     for name in targets:
         row = session.get(TaskModel, name)
         if row is None:
@@ -198,6 +202,16 @@ def set_task(task: str, payload: TaskIn, session: Session = Depends(get_session)
         row.strict_json, row.timeout_s = payload.strict_json, payload.timeout_s
     session.flush()
     return list_tasks(session, ai)
+
+
+def _known_price(session: Session, ai: TaskRouter, choice: Choice) -> None:
+    """Un modele paye a l'usage sans tarif publie ne peut pas etre plafonne : il est refuse."""
+    if ai.billing(choice) != "usage":
+        return
+    model = ai.price(session, choice)
+    if model is None or model.price_in_per_mtok is None or model.price_out_per_mtok is None:
+        raise HTTPException(http.HTTP_400_BAD_REQUEST, f"Le tarif de « {choice.model} » n'est pas publié : ShortForge "
+                            "ne peut pas le plafonner. Choisis un modèle au tarif affiché.")
 
 
 def _must_exist(session: Session, ai: TaskRouter, choice: Choice) -> None:
@@ -230,7 +244,8 @@ def list_calls(limit: int = Query(default=50, ge=1, le=500), session: Session = 
     return [{"id": r.id, "at": r.created_at.isoformat(), "task": r.task, "provider_id": r.provider_id,
              "model": r.model, "mode": r.mode, "ok": r.ok, "used_fallback": r.used_fallback,
              "error_kind": r.error_kind, "error": r.error, "duration_ms": r.duration_ms,
-             "input_tokens": r.input_tokens, "output_tokens": r.output_tokens, "cost_usd": r.cost_usd} for r in rows]
+             "input_tokens": r.input_tokens, "output_tokens": r.output_tokens, "cost_usd": r.cost_usd,
+             "billing": "free" if r.mode == "local" else ai.billing(Choice(r.provider_id, r.model))} for r in rows]
 
 
 @router.get("/security")

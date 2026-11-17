@@ -89,6 +89,19 @@ class PipelineService:
         if step.status == StepStatus.DONE.value:
             step.output = {"skipped": True, "manual": True, "message": reason}
 
+    def ensure_steps(self, project: Project) -> int:
+        """Recree les etapes absentes (base modifiee a la main ou incomplete). Renvoie leur nombre."""
+        present = {s.name for s in project.steps}
+        missing = [(i, d) for i, d in enumerate(PIPELINE) if d.name.value not in present]
+        for position, definition in missing:
+            project.steps.append(PipelineStep(name=definition.name.value, position=position,
+                                              status=StepStatus.PENDING.value))
+        if missing:
+            project.steps.sort(key=lambda s: s.position)
+            self.session.flush()
+            self._refresh_project(project)
+        return len(missing)
+
     def get_project(self, project_id: str) -> Project:
         project = self.session.get(Project, project_id)
         if project is None:
