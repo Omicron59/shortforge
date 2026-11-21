@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import secrets
+from typing import Any
 
 from fastapi import APIRouter, Depends, Query, Request, WebSocket, WebSocketDisconnect, status
 from fastapi.responses import JSONResponse
@@ -22,6 +23,7 @@ from shortforge.schemas import (
     RejectPayload,
     StepOut,
 )
+from shortforge.services import projects as project_service
 
 router = APIRouter(prefix="/api/projects", tags=["projets"])
 
@@ -47,8 +49,43 @@ def create_project(payload: ProjectCreate, request: Request, session: Session = 
 
 
 @router.get("", response_model=list[ProjectOut])
-def list_projects(request: Request, session: Session = Depends(get_session)) -> list[ProjectOut]:
-    return [ProjectOut.model_validate(p) for p in build_service(request, session).list_projects()]
+def list_projects(request: Request, archived: bool = Query(default=False),
+                  session: Session = Depends(get_session)) -> list[ProjectOut]:
+    return [ProjectOut.model_validate(p) for p in build_service(request, session).list_projects(archived=archived)]
+
+
+@router.get("/{project_id}/footprint")
+def project_footprint(project_id: str, request: Request, session: Session = Depends(get_session)) -> dict[str, Any]:
+    """Espace disque et medias du projet, a afficher avant une suppression."""
+    project = build_service(request, session).get_project(project_id)
+    return project_service.footprint(session, request.app.state.settings.shortforge_data_dir, project)
+
+
+@router.post("/{project_id}/archive", response_model=ProjectOut)
+def archive_project(project_id: str, request: Request, session: Session = Depends(get_session)) -> ProjectOut:
+    project = build_service(request, session).get_project(project_id)
+    return ProjectOut.model_validate(project_service.archive(session, project))
+
+
+@router.post("/{project_id}/unarchive", response_model=ProjectOut)
+def unarchive_project(project_id: str, request: Request, session: Session = Depends(get_session)) -> ProjectOut:
+    project = build_service(request, session).get_project(project_id)
+    return ProjectOut.model_validate(project_service.unarchive(session, project))
+
+
+@router.delete("/{project_id}")
+def delete_project(project_id: str, request: Request, confirm: bool = Query(default=False),
+                   session: Session = Depends(get_session)) -> dict[str, Any]:
+    """Suppression definitive : exige `confirm=true`, envoye seulement apres l'accord explicite dans l'interface."""
+    project = build_service(request, session).get_project(project_id)
+    if not confirm:
+        raise PipelineError("Confirme la suppression définitive (confirm=true).")
+    try:
+        report = project_service.delete_project(session, request.app.state.settings.shortforge_data_dir, project,
+                                                running=request.app.state.runner.is_running(project_id))
+    except project_service.ProjectDeletionError as exc:
+        raise PipelineError(str(exc)) from exc
+    return {"deleted": True, "title": report.title, "freed_bytes": report.freed_bytes, "leftover": report.leftover}
 
 
 @router.get("/{project_id}", response_model=ProjectDetail)

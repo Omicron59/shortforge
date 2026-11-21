@@ -105,7 +105,8 @@ def create_week(session: Session, service: PipelineService, pool: Project, idea_
 def pending_validations(session: Session) -> list[dict[str, Any]]:
     """Boite de validation : toutes les decisions qui t'attendent, tous projets confondus."""
     rows = session.execute(select(PipelineStep, Project).join(Project, Project.id == PipelineStep.project_id)
-                           .where(PipelineStep.status == "needs_validation", Project.source != "plan")
+                           .where(PipelineStep.status == "needs_validation", Project.source != "plan",
+                                  Project.archived_at.is_(None))
                            .order_by(Project.planned_for, PipelineStep.updated_at)).all()
     items = []
     for step, project in rows:

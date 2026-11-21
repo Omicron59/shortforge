@@ -43,7 +43,7 @@ def test_old_database_is_backed_up_then_upgraded_without_losing_data(tmp_path: P
     db = Database(f"sqlite:///{path.as_posix()}")
     report = migrate(db, tmp_path / "sauvegardes")
 
-    assert report.previous is None and report.current == "0003"
+    assert report.previous is None and report.current == "0004"
     assert report.backup is not None and report.backup.is_file()
     backup = sqlite3.connect(report.backup)  # la sauvegarde est la base d'avant : donnees presentes, pas les ajouts
     assert backup.execute("SELECT title FROM projects").fetchall() == [("Mon premier Short",)]
@@ -68,7 +68,7 @@ def test_upgraded_database_has_the_same_schema_as_a_new_one(tmp_path: Path) -> N
     fresh = Database(f"sqlite:///{(tmp_path / 'neuve.sqlite3').as_posix()}")
     migrate(upgraded, tmp_path / "s")
     report = migrate(fresh, tmp_path / "s")
-    assert report.backup is None and report.current == "0003"
+    assert report.backup is None and report.current == "0004"
     assert schema(upgraded) == schema(fresh)
     upgraded.engine.dispose()
     fresh.engine.dispose()

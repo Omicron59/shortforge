@@ -50,6 +50,7 @@ import type {
   AiTestResult,
   AiCall,
   SecurityStatus,
+  ProjectFootprint,
 } from "./types";
 
 export const API_URL: string = import.meta.env.VITE_API_URL ?? "http://127.0.0.1:8787";
@@ -158,6 +159,13 @@ export const api = {
   status: () => get<ServicesStatus>("/api/status"),
 
   projects: () => get<Project[]>("/api/projects"),
+  archivedProjects: () => get<Project[]>("/api/projects?archived=true"),
+  projectFootprint: (id: string) => get<ProjectFootprint>(`/api/projects/${id}/footprint`),
+  archiveProject: (id: string) => send<Project>("POST", `/api/projects/${id}/archive`),
+  unarchiveProject: (id: string) => send<Project>("POST", `/api/projects/${id}/unarchive`),
+  /** Suppression definitive : appelee seulement apres la confirmation explicite de l'utilisateur. */
+  deleteProject: (id: string) =>
+    send<{ deleted: boolean; title: string; freed_bytes: number; leftover: string }>("DELETE", `/api/projects/${id}?confirm=true`),
   project: (id: string) => get<ProjectDetail>(`/api/projects/${id}`),
   createProject: (body: { title: string; niche: string; language: string; video_mode: VideoMode }) =>
     send<ProjectDetail>("POST", "/api/projects", body),

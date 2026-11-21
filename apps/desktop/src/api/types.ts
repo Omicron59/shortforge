@@ -41,6 +41,21 @@ export interface Project {
   engine_scope: "scene" | "short";
   created_at: string;
   updated_at: string;
+  archived_at?: string | null;
+}
+
+/** Ce qu'une suppression definitive effacerait (dossier du projet et medias). */
+export interface ProjectFootprint {
+  project_id: string;
+  title: string;
+  bytes: number;
+  files: number;
+  images: number;
+  videos: number;
+  audio: number;
+  renders: number;
+  scheduled_posts: number;
+  archived: boolean;
 }
 
 export interface ProjectDetail extends Project {
