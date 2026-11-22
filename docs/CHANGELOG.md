@@ -1,5 +1,15 @@
 # Journal des changements
 
+## 0.7.1 — 22/11/2026
+
+### Ajouté
+- Archiver un projet : il disparaît des listes (Tableau de bord, « Reprendre un projet », menu) sans rien effacer ; « Voir les projets archivés » permet de le restaurer. Un projet archivé n'apparaît plus dans « À valider ».
+- Supprimer définitivement un projet et ses médias, avec une fenêtre qui détaille son contenu, l'espace libéré et le caractère irréversible, et une case à cocher. Refusé tant que le projet est en cours de production. Les fichiers partagés (musique, autres projets) ne sont jamais touchés ; les coûts passés sont conservés.
+- Migration de base `0004` (colonne d'archivage), précédée de la sauvegarde automatique habituelle.
+
+### Corrigé
+- Le menu des projets se met à jour après la création ou la duplication d'un projet.
+
 ## 0.7.0 — 17/11/2026 (non publiée)
 
 ### Ajouté
