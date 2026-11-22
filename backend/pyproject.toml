@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "shortforge"
-version = "0.7.0"
+version = "0.7.1"
 description = "Backend local de ShortForge : creation de YouTube Shorts avec IA."
 readme = "README.md"
 license = "MIT"

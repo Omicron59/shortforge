@@ -108,8 +108,10 @@ class PipelineService:
             raise ProjectNotFoundError("Projet introuvable.")
         return project
 
-    def list_projects(self) -> list[Project]:
-        return list(self.session.scalars(select(Project).where(Project.source != "plan")
+    def list_projects(self, *, archived: bool = False) -> list[Project]:
+        """Projets visibles (par defaut) ou archives seulement (`archived=True`)."""
+        visible = Project.archived_at.is_not(None) if archived else Project.archived_at.is_(None)
+        return list(self.session.scalars(select(Project).where(Project.source != "plan", visible)
                                          .order_by(Project.updated_at.desc())))
 
     # ── Etapes ──

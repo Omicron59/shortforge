@@ -1,11 +1,12 @@
 // Etape 1 : le brief. Peu de champs, des valeurs par defaut, le reste dans une section repliee.
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../../api/client";
 import { wizard, type Brief, type WizardOptions } from "../../api/wizard";
 import { Btn, Collapsible, Labeled, Notice, Page, Panel, Pill, Skeleton, fieldClass } from "../../components/ds";
 import { useProjectStore } from "../../stores/project";
+import { ArchivedProjects, ProjectRowActions } from "../../components/ProjectLifecycle";
 import { EngineNote, NoModel, SaveBadge, Stepper, message, useAutosave, useWizard } from "./shared";
 
 const DRAFT_KEY = "shortforge.brief-draft";
@@ -32,6 +33,7 @@ export default function BriefPage() {
 
 function Fresh({ options }: { options: WizardOptions }) {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const setCurrent = useProjectStore((s) => s.setCurrent);
   const [brief, setBrief] = useState<Brief>(() => loadDraft(options.defaults));
   const engines = useQuery({ queryKey: ["wizard", "engines"], queryFn: wizard.engines });
@@ -47,6 +49,7 @@ function Fresh({ options }: { options: WizardOptions }) {
     },
     onSuccess: ({ id, manual }) => {
       try { localStorage.removeItem(DRAFT_KEY); } catch { /* rien */ }
+      void queryClient.invalidateQueries({ queryKey: ["projects"] }); // le menu affiche tout de suite le nouveau projet
       setCurrent(id);
       navigate(manual ? `/creer/${id}/script` : `/creer/${id}/idees`, { state: { generate: !manual } });
     },
@@ -155,20 +158,25 @@ function Choice({ label, value, choices, onPick }: { label: string; value: strin
 function Drafts() {
   const projects = useQuery({ queryKey: ["projects"], queryFn: api.projects });
   const setCurrent = useProjectStore((s) => s.setCurrent);
-  if (!projects.data?.length) return null;
+  if (!projects.data) return null;
   return (
-    <Panel title="Reprendre un projet" hint="Chaque projet rouvre à l'étape où tu t'étais arrêté.">
+    <Panel title="Reprendre un projet" hint="Chaque projet rouvre à l'étape où tu t'étais arrêté. Archiver le retire de la liste sans rien effacer.">
+      {projects.data.length === 0 && <p className="text-sm text-sf-muted">Aucun projet en cours.</p>}
       <ul className="divide-y divide-sf-border">
-        {projects.data.slice(0, 8).map((p) => (
+        {projects.data.slice(0, 12).map((p) => (
           <li key={p.id} className="flex flex-wrap items-center justify-between gap-3 py-2.5">
             <div className="min-w-0">
               <p className="truncate">{p.title}</p>
               <p className="text-xs text-sf-muted">Modifié le {new Date(`${p.updated_at}Z`).toLocaleString("fr-FR", { dateStyle: "medium", timeStyle: "short" })}</p>
             </div>
-            <Link to={`/creer/${p.id}`} onClick={() => setCurrent(p.id)} className="inline-flex min-h-[40px] items-center rounded-xl border border-sf-border bg-sf-raised px-4 text-sm hover:border-sf-muted/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-sf-primary">Reprendre</Link>
+            <div className="flex flex-wrap items-center gap-2">
+              <ProjectRowActions project={p} />
+              <Link to={`/creer/${p.id}`} onClick={() => setCurrent(p.id)} className="inline-flex min-h-[40px] items-center rounded-xl border border-sf-border bg-sf-raised px-4 text-sm hover:border-sf-muted/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-sf-primary">Reprendre</Link>
+            </div>
           </li>
         ))}
       </ul>
+      <ArchivedProjects />
     </Panel>
   );
 }

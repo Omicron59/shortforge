@@ -7,6 +7,7 @@ import { NextAction, PipelineTimeline } from "../components/Pipeline";
 import { Badge, Button, Card, Empty, Meter, PageHeader, Stat } from "../components/ui";
 import { PROJECT_STATUS_LABELS, dateTime, usd } from "../lib/format";
 import { useProjectStore } from "../stores/project";
+import { ArchivedProjects, ProjectRowActions } from "../components/ProjectLifecycle";
 
 export default function Dashboard() {
   const status = useQuery({ queryKey: ["status"], queryFn: api.status, refetchInterval: 15_000 });
@@ -81,23 +82,25 @@ export default function Dashboard() {
             {projects.data?.length ? (
               <ul className="divide-y divide-zinc-800">
                 {projects.data.map((p) => (
-                  <li key={p.id}>
+                  <li key={p.id} className="py-1">
                     <button
                       type="button"
                       onClick={() => setCurrent(p.id)}
-                      className={`flex w-full items-center justify-between gap-2 px-1 py-2 text-left text-sm hover:text-violet-200 ${p.id === currentId ? "text-violet-300" : ""}`}
+                      className={`flex w-full items-center justify-between gap-2 px-1 py-1 text-left text-sm hover:text-violet-200 ${p.id === currentId ? "text-violet-300" : ""}`}
                     >
                       <span className="truncate">{p.title}</span>
                       <Badge tone={p.status === "done" ? "green" : p.status === "cancelled" ? "zinc" : "violet"}>
                         {PROJECT_STATUS_LABELS[p.status] ?? p.status}
                       </Badge>
                     </button>
+                    <ProjectRowActions project={p} compact />
                   </li>
                 ))}
               </ul>
             ) : (
               <p className="text-sm text-zinc-500">Pas encore de projet.</p>
             )}
+            <ArchivedProjects />
           </Card>
           <div className="mt-4 grid grid-cols-2 gap-4">
             <Stat label="Projets" value={projects.data?.length ?? "—"} />

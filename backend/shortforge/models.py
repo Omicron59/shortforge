@@ -49,6 +49,7 @@ class Project(TimestampMixin, Base):
     clip: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)  # {source_id, start, end} pour un extrait
     # Derniere modification du texte ou de l'ordre des scenes : sert a signaler voix, sous-titres et rendu obsoletes.
     content_changed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    archived_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)  # masque des listes, recuperable
 
     steps: Mapped[list[PipelineStep]] = relationship(
         back_populates="project", cascade="all, delete-orphan", order_by="PipelineStep.position"

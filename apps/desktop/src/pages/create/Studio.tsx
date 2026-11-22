@@ -69,7 +69,7 @@ function Studio({ id, state, set }: { id: string; state: WizardState; set: (s: W
   const reopen = useMutation({ mutationFn: () => wizard.reopen(id), onSuccess: (next) => { set(next); navigate(`/creer/${id}/script`); }, onError });
   const duplicate = useMutation({
     mutationFn: () => wizard.duplicate(id),
-    onSuccess: (copy) => { push("Projet dupliqué (sans les médias).", "success"); navigate(`/creer/${copy.project.id}`); },
+    onSuccess: (copy) => { void client.invalidateQueries({ queryKey: ["projects"] }); push("Projet dupliqué (sans les médias).", "success"); navigate(`/creer/${copy.project.id}`); },
     onError,
   });
   const order = useMutation({ mutationFn: (ids: string[]) => wizard.reorder(id, ids), onSuccess: set, onError });
